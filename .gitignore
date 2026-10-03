@@ -1,0 +1,4 @@
+/target
+*.sdPlugin/
+.DS_Store
+*.raw

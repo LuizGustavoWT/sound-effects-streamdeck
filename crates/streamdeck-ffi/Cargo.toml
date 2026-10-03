@@ -1,0 +1,16 @@
+[package]
+name = "streamdeck-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Camada C ABI do plugin, integrada ao host do Stream Deck"
+
+[lib]
+name = "streamdeck_ffi"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+soundbar-core = { path = "../soundbar-core" }
+anyhow.workspace = true
+serde_json.workspace = true

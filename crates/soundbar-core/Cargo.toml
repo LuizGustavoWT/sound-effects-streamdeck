@@ -1,0 +1,16 @@
+[package]
+name = "soundbar-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Modelo de dados, configuracao e protocolo compartilhados do Sound Effects Stream Deck"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+symphonia.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

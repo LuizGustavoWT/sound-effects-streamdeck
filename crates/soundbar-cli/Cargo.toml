@@ -1,0 +1,16 @@
+[package]
+name = "soundbar-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI de controle e diagnostico do soundbar"
+
+[[bin]]
+name = "soundbar"
+path = "src/main.rs"
+
+[dependencies]
+soundbar-core = { path = "../soundbar-core" }
+anyhow.workspace = true
+serde_json.workspace = true

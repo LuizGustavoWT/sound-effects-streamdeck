@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Play Effect</title>
+  <style>
+    body { font: 13px -apple-system, "Segoe UI", sans-serif; padding: 12px; color: #ddd; }
+    label { display:block; margin: 10px 0 4px; color:#aaa; }
+    select, input[type=text] { width:100%; padding:5px; background:#1e1e1e; color:#eee;
+                               border:1px solid #444; border-radius:3px; box-sizing:border-box; }
+    .hint { color:#777; font-size:11px; margin-top:3px; }
+    button { margin-top:14px; padding:7px 14px; background:#2a6df4; color:#fff;
+             border:0; border-radius:3px; cursor:pointer; }
+    .status { margin-top:10px; font-size:11px; color:#888; }
+  </style>
+</head>
+<body>
+  <label>Efeito</label>
+  <select id="effect"></select>
+  <div class="hint" id="hint">Se a lista estiver vazia, o daemon precisa estar rodando.</div>
+
+  <label>Ganho (0.0 - 4.0)</label>
+  <input type="text" id="gain" value="1.0">
+
+  <label>Texto na tecla (opcional)</label>
+  <input type="text" id="label">
+
+  <label><input type="checkbox" id="toggle" checked> Modo toggle (liga/desliga)</label>
+
+  <button id="test">Testar</button>
+  <div class="status" id="status"></div>
+
+<script>
+  // O Stream Deck chama loadSettings ao abrir esta tela.
+  var payload = {};
+  var available = [];
+
+  function sendPluginEvent(name, context) {
+    if (typeof window.sendPluginEvent === 'function') {
+      window.sendPluginEvent(name, context);
+    }
+  }
+
+  function populate(current) {
+    var sel = document.getElementById('effect');
+    sel.innerHTML = '';
+    var empty = document.createElement('option');
+    empty.value = '';
+    empty.textContent = '(nenhum)';
+    sel.appendChild(empty);
+    available.forEach(function (e) {
+      var o = document.createElement('option');
+      o.value = e.id;
+      o.textContent = e.name || e.id;
+      if (e.id === current) { o.selected = true; }
+      sel.appendChild(o);
+    });
+    document.getElementById('hint').textContent = available.length
+      ? available.length + ' efeito(s) disponivel(is).'
+      : 'Nenhum efeito. Verifique se o daemon esta rodando.';
+  }
+
+  function loadSettings(data) {
+    payload = data.settings || {};
+    document.getElementById('gain').value  = payload.gain  || '1.0';
+    document.getElementById('label').value = payload.label || '';
+    document.getElementById('toggle').checked = payload.toggle !== false;
+    available = payload.effects || [];
+    populate(payload.effect);
+  }
+
+  function saveSettings(data, settings) {
+    payload.effect = document.getElementById('effect').value;
+    payload.gain   = parseFloat(document.getElementById('gain').value) || 1.0;
+    payload.label  = document.getElementById('label').value;
+    payload.toggle = document.getElementById('toggle').checked;
+    settings.effect = payload.effect;
+    settings.gain   = payload.gain;
+    settings.label  = payload.label;
+    settings.toggle = payload.toggle;
+  }
+
+  document.getElementById('test').onclick = function () {
+    sendPluginEvent('com.soundbar.play', {
+      effect: document.getElementById('effect').value,
+      gain: parseFloat(document.getElementById('gain').value) || 1.0,
+      action: 'test'
+    });
+    document.getElementById('status').textContent = 'Teste enviado ao daemon.';
+  };
+</script>
+</body>
+</html>

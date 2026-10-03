@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Empacotar ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            suffix: linux
+          - os: macos-latest
+            suffix: macos
+          - os: windows-latest
+            suffix: windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Instalar deps
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libpulse-dev
+      - run: cargo build --workspace --release
+      - name: Montar o .sdPlugin
+        shell: bash
+        run: |
+          PLUGIN="SoundEffectsStreamDeck.sdPlugin"
+          mkdir -p "$PLUGIN/Sounds" "$PLUGIN/Actions" "$PLUGIN/PropertyInspector"
+          cp plugin/manifest.json "$PLUGIN/"
+          cp -r plugin/Actions/. "$PLUGIN/Actions/" 2>/dev/null || true
+          cp -r plugin/PropertyInspector/. "$PLUGIN/PropertyInspector/" 2>/dev/null || true
+          if [ -d assets/sounds ]; then cp -r assets/sounds/. "$PLUGIN/Sounds/" || true; fi
+          case "${{ matrix.suffix }}" in
+            linux)   cp target/release/libstreamdeck_ffi.so "$PLUGIN/" 2>/dev/null || true ;;
+            macos)   cp target/release/libstreamdeck_ffi.dylib "$PLUGIN/" 2>/dev/null || true ;;
+            windows) cp target/release/streamdeck_ffi.dll "$PLUGIN/" 2>/dev/null || true ;;
+          esac
+      - name: Criar zip
+        shell: bash
+        run: |
+          zip -r "SoundEffectsStreamDeck-${{ matrix.suffix }}.zip" "SoundEffectsStreamDeck.sdPlugin"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugin-${{ matrix.suffix }}
+          path: "*.zip"
+
+  release:
+    name: Publicar release
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Baixar todos os zips
+        run: |
+          find artifacts -name '*.zip' -exec mv {} . \;
+          ls -la
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            *.zip
+          generate_release_notes: true
+          body: |
+            ## Como instalar
+            1. Baixe o zip do seu sistema.
+            2. Descompacte.
+            3. Arraste a pasta `SoundEffectsStreamDeck.sdPlugin` para a pasta de plugins do Stream Deck.
+            4. No Linux, rode `./install.sh` para instalar o daemon de áudio.

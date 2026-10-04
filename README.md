@@ -93,6 +93,13 @@ Por padrão, o áudio vai só para a live. Se você quiser ouvir também:
 - **Windows:** Clique com o botão direito no ícone de som → Sons → Gravação → procure por `StreamDeckSoundBar` → Propriedades → Escutar → marque "Escutar este dispositivo" e escolha seus fones.
 - **macOS:** Use o **BlackHole** ou **Soundflower** para rotear o áudio, ou configure no mixer do sistema.
 
+> **Importante:** o OBS monta a lista de dispositivos de áudio **uma única
+> vez**, quando abre. Se o `soundbar` não estava rodando nesse momento, o
+> dispositivo não aparece — e reiniciar o daemon depois não faz o OBS
+> relistar. É preciso **fechar e abrir o OBS** para ele enxergar o sink.
+>
+> O mesmo vale se o daemon for reiniciado: o sink é recriado com um id novo.
+
 **Verificando se está funcionando:**
 
 - Aperte uma tecla com efeito configurado no Stream Deck.
@@ -109,6 +116,33 @@ soundbar play teste               # toca um efeito
 soundbar play memes/rickroll -g 0.8
 soundbar stop-all
 soundbar logs                     # status do daemon
+```
+
+### 4b. Usar no Discord, Slack e Google Meet
+
+Esses aplicativos só aceitam **microfones** como entrada de áudio — um
+dispositivo de saída virtual (como o `StreamDeckSoundBar`) simplesmente não
+aparece na lista deles.
+
+Por isso o daemon cria automaticamente uma **fonte virtual**,
+`SoundEffectsStreamDeckMic`, que expõe os efeitos como se fosse um microfone.
+Aparecer como microfone é o que esses apps conseguem usar.
+
+1. Rode o `soundbar` normalmente (o daemon precisa estar no ar).
+2. No Discord/Slack/Meet, abra as configurações de áudio.
+3. Escolha `SoundEffectsStreamDeckMic` como microfone.
+
+> **Atenção:** escolher esse microfone virtual **substitui** o seu microfone
+> real naquela chamada. Para falar e tocar efeitos ao mesmo tempo, esses apps
+> normalmente deixam você usar **dois** sistemas de captura, ou usar o
+> microfone de verdade e enviar os efeitos por outra via (como uma fonte de
+> áudio virtual no OBS).
+
+Para desligar a fonte virtual (por exemplo, se preferir usar um driver de
+áudio dedicado), coloque em `config.json`:
+
+```json
+{ "audio": { "virtual_mic": null } }
 ```
 
 ---

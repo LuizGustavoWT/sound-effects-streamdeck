@@ -67,6 +67,53 @@ pub fn ensure_null_sink(name: &str, description: &str) -> Result<()> {
     Ok(())
 }
 
+/// Cria uma fonte de audio virtual, para apps que so aceitam microfone.
+///
+/// Discord, Slack e Google Meet oferecem apenas uma lista de microfones como
+/// entrada. Um null-sink (dispositivo de saida) simplesmente nao aparece la.
+/// Esta fonte faz o caminho inverso: expõe o audio do sink como se fosse um
+/// microfone, entao esses apps passam a enxergar os efeitos.
+///
+/// `module-remap-source` com `master=<sink>.monitor` e a forma correta no
+/// PipeWire: o sink nao tem um "entrada", mas o monitor dele sim.
+pub fn ensure_virtual_mic(name: &str, description: &str, master: &str) -> Result<()> {
+    let existing = std::process::Command::new("pactl")
+        .args(["list", "short", "sources"])
+        .output()?;
+
+    if existing.status.success() {
+        let out = String::from_utf8_lossy(&existing.stdout);
+        if out
+            .lines()
+            .any(|l| l.split_whitespace().nth(1) == Some(name))
+        {
+            return Ok(());
+        }
+    }
+
+    let status = std::process::Command::new("pactl")
+        .args([
+            "load-module",
+            "module-remap-source",
+            &format!("source_name={name}"),
+            &format!("master={master}"),
+            // Descricao sem espacos: o parser de modulos trunca no espaco.
+            &format!(
+                "source_properties=device.description={}",
+                compact(description)
+            ),
+        ])
+        .status()?;
+
+    if !status.success() {
+        return Err(anyhow!(
+            "nao foi possivel criar a fonte virtual {name}. O modulo \
+             module-remap-source nao esta disponivel?"
+        ));
+    }
+    Ok(())
+}
+
 /// Remove o null-sink (usado no shutdown / --uninstall).
 pub fn remove_null_sink(name: &str) {
     let _ = std::process::Command::new("pactl")

@@ -118,6 +118,23 @@ fn run(args: &[String]) -> Result<()> {
         )
         .context("falha ao preparar dispositivo de saida")?;
 
+        // Fonte virtual (microfone) para Discord/Slack/Meet: esses apps so
+        // aceitam microfones como entrada, e um null-sink nao aparece la.
+        if let Some(mic) = cfg.audio.virtual_mic.as_deref() {
+            let master = format!("{}.monitor", cfg.audio.virtual_device);
+            match soundbar_audio::pulse::ensure_virtual_mic(
+                mic,
+                &cfg.audio.virtual_mic_description,
+                &master,
+            ) {
+                Ok(()) => eprintln!("[soundbar] microfone virtual: {mic}"),
+                Err(e) => eprintln!(
+                    "[soundbar] aviso: microfone virtual indisponivel ({e:#}). \
+                     Discord/Slack/Meet nao verao os efeitos."
+                ),
+            }
+        }
+
         let run_flag = running.clone();
         let audio_state = state.clone();
         let should = Arc::new(move || run_flag.load(Ordering::Relaxed));

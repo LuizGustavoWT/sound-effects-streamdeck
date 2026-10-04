@@ -47,12 +47,23 @@ impl Daemon {
 
     /// Envia uma mensagem e le a resposta.
     fn request(&self, msg: &ClientMessage, _timeout: Duration) -> Result<Option<DaemonMessage>> {
-        let mut conn = Conn::connect(&self.endpoint())?;
-        conn.write_line(&serde_json::to_string(msg)?)?;
+        let mut conn = Conn::connect(&self.endpoint())
+            .map_err(|e| anyhow::anyhow!("IPC falhou em {}: {e}", self.endpoint().display()))?;
+        conn.write_line(&serde_json::to_string(msg)?)
+            .map_err(|e| anyhow::anyhow!("envio falhou: {e}"))?;
         let Some(line) = conn.read_line()? else {
+            log::warn!("daemon fechou sem responder");
             return Ok(None);
         };
-        Ok(serde_json::from_str(&line).ok())
+        let reply: DaemonMessage = serde_json::from_str(&line)
+            .map_err(|e| anyhow::anyhow!("resposta invalida '{line}': {e}"))?;
+
+        // O daemon responde `error` em vez de falhar a conexao. Sem checar
+        // isso, um efeito inexistente ou polyphony cheia passava por sucesso.
+        if let DaemonMessage::Error { message } = &reply {
+            return Err(anyhow::anyhow!("daemon: {message}"));
+        }
+        Ok(Some(reply))
     }
 
     /// Toca um efeito. Em modo toggle, o daemon devolve o id da instancia
@@ -124,6 +135,12 @@ impl Action for PlayEffect {
         instance: &Instance,
         settings: &Self::Settings,
     ) -> OpenActionResult<()> {
+        log::info!(
+            "soundbar: keyDown! effect={:?} gain={} toggle={}",
+            settings.effect,
+            settings.gain,
+            settings.toggle
+        );
         if settings.effect.trim().is_empty() {
             log::warn!("tecla sem efeito configurado");
             return Ok(());
@@ -138,7 +155,7 @@ impl Action for PlayEffect {
                 instance.set_state(1).await.ok();
             }
             Err(e) => {
-                log::warn!("falha ao tocar {}: {e}", settings.effect);
+                log::warn!("FALHA ao tocar '{}': {e:#}", settings.effect);
                 instance.show_alert().await.ok();
             }
         }
@@ -235,6 +252,10 @@ impl Action for PlayEffect {
         instance: &Instance,
         settings: &Self::Settings,
     ) -> OpenActionResult<()> {
+        log::info!(
+            "soundbar: will_appear chamado, effect={:?}",
+            settings.effect
+        );
         // Recuperacao: se o perfil do OpenDeck perdeu a configuracao desta
         // tecla, o backup tem o valor correto e a gente restaura.
         let mut settings = settings.clone();

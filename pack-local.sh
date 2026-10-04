@@ -13,7 +13,7 @@ BINARY_NAME="soundbar-plugin"
 PLUGIN_UUID="com.soundbar.streamdeck.sdPlugin"
 
 # Flatpak (OpenDeck via Flathub) e nativo — cobre ambos os casos.
-FLATPAK_DEST="$HOME/.var/app/me.amankhanna.opendeck/config/opendeck/plugins/$PLUGIN_UUID"
+FLATPAK_DEST="$HOME/.var/app/me.amankhanna.opendeck/config/opendeck/plugins/$PLUGIN_UUID"  # so existe se o Flatpak estiver instalado
 NATIVE_DEST="$HOME/.config/opendeck/plugins/$PLUGIN_UUID"
 NATIVE_DEST2="$HOME/.config/streamdeck/plugins/$PLUGIN_UUID"
 
@@ -24,10 +24,13 @@ else
 fi
 
 echo "🔨 Compilando em modo $MODE..."
+# Compila o plugin E o daemon. Antes esses dois ficavam com versoes
+# diferentes: o plugin era novo e o servico continuava com o binario antigo,
+# o que fazia o botao nao tocar mesmo com tudo aparentemente instalado.
 if [ "$MODE" = "debug" ]; then
-    cargo build -p streamdeck-ffi
+    cargo build -p streamdeck-ffi -p soundbar-daemon
 else
-    cargo build --release -p streamdeck-ffi
+    cargo build --release -p streamdeck-ffi -p soundbar-daemon
 fi
 
 BIN_SRC="$BUILD_DIR/$BINARY_NAME"
@@ -85,6 +88,30 @@ if [ "$FOUND" = "0" ]; then
     echo ""
     echo "   Abra o OpenDeck uma vez (para criar a pasta), ou rode ./install.sh"
     exit 1
+fi
+
+# --- daemon ---
+# Precisa bater com o codigo: um binario velho em ~/.local/bin faz o audio
+# picotar ou o botao nao tocar, mesmo com o plugin novo.
+DAEMON_SRC="$BUILD_DIR/soundbar-daemon"
+if [ -f "$DAEMON_SRC" ]; then
+    if command -v systemctl >/dev/null && systemctl --user is-active --quiet soundbar 2>/dev/null; then
+        echo "🔄 Atualizando o daemon em execucao (pode falhar: arquivo em uso)"
+        systemctl --user stop soundbar 2>/dev/null || true
+        sleep 0.5
+    fi
+    DEST_BIN="$HOME/.local/bin"
+    mkdir -p "$DEST_BIN"
+    if cp -f "$DAEMON_SRC" "$DEST_BIN/soundbar-daemon" 2>/dev/null; then
+        chmod +x "$DEST_BIN/soundbar-daemon"
+        if command -v systemctl >/dev/null && systemctl --user is-enabled --quiet soundbar 2>/dev/null; then
+            systemctl --user start soundbar 2>/dev/null || true
+        fi
+        echo "🔊 Daemon atualizado"
+    else
+        echo "⚠️  Nao foi possivel substituir o daemon (em uso)."
+        echo "   Rode: systemctl --user restart soundbar"
+    fi
 fi
 
 echo "✅ Plugin atualizado localmente!"

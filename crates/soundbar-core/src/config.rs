@@ -65,6 +65,13 @@ pub struct AudioConfig {
     pub max_polyphony: usize,
     /// Nome do sink do Pulse/pipewire a ser capturado como entrada de monitor.
     pub monitor_source: Option<String>,
+    /// Nome da fonte virtual (microfone) para Discord/Slack/Meet.
+    ///
+    /// Vazio desliga. Quando ligado, o audio do sink aparece como microfone
+    /// nesses apps.
+    pub virtual_mic: Option<String>,
+    /// Descricao mostrada na lista de microfones.
+    pub virtual_mic_description: String,
 }
 
 impl Default for AudioConfig {
@@ -76,6 +83,8 @@ impl Default for AudioConfig {
             master_gain: 1.0,
             max_polyphony: 16,
             monitor_source: None,
+            virtual_mic: Some("StreamDeckSoundBarMic".into()),
+            virtual_mic_description: "SoundEffectsStreamDeckMic".into(),
         }
     }
 }
@@ -218,12 +227,14 @@ impl Config {
                 return PathBuf::from(d);
             }
         }
+        // Instalacao portatil (o binario ao lado de um `sounds/`).
         if let Some(dir) = portable_dir() {
             return dir;
         }
-        if let Some(dir) = plugin_dir() {
-            return dir;
-        }
+
+        // O diretorio padrao e sempre o certo: o daemon e o socket vivem
+        // nele. A pasta do plugin NAO serve aqui, mesmo que exista, porque
+        // o plugin e apenas um cliente do daemon.
         Config::default_dir()
     }
 
@@ -242,9 +253,14 @@ fn portable_dir() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?.to_path_buf();
 
-    let has_sounds = dir.join("sounds").is_dir();
-    let has_config = dir.join("config.json").is_file();
-    if has_sounds || has_config {
+    // So considera a pasta do executavel como config se ela tiver marcas
+    // de uso real. Um plugin instalado em ~/.config/opendeck/plugins/... tem
+    // manifest.json e assets, mas nao e o diretorio de configuracao: sem
+    // esta checagem o daemon e procurado no lugar errado.
+    // Exigimos `sounds/`: e a marca de uma instalacao portatil real. Um
+    // plugin instalado numa pasta de plugins tem arquivos como `manifest.json`
+    // ou um `config.json` de outra ferramenta, e usaria a pasta por engano.
+    if dir.join("sounds").is_dir() {
         Some(dir)
     } else {
         None
@@ -256,12 +272,12 @@ fn portable_dir() -> Option<PathBuf> {
 /// Usado pela CLI, que roda de `~/.local/bin` e nao consegue detectar o modo
 /// portatil pelo proprio executavel.
 pub fn plugin_dir() -> Option<PathBuf> {
-    let home = std::env::var("HOME")
-        .ok()
-        .or_else(|| std::env::var("USERPROFILE").ok())?;
+    let home = Config::real_home();
 
     #[cfg(target_os = "linux")]
     let candidates = [
+        // OpenDeck nativo (o Flatpak nao tem acesso ao host; ver README).
+        PathBuf::from(&home).join(".config/opendeck/plugins/com.soundbar.streamdeck.sdPlugin"),
         PathBuf::from(&home).join(".config/streamdeck/plugins/SoundEffectsStreamDeck.sdPlugin"),
         PathBuf::from(&home)
             .join(".local/share/StreamDeck/plugins/SoundEffectsStreamDeck.sdPlugin"),

@@ -42,7 +42,7 @@ plugin_dir() {
     Linux)
       # Stream Deck 5+ em formato .sdPlugin
       for d in \
-        "$XDG_CONFIG_HOME/StreamDeck/plugins" \
+        "${XDG_CONFIG_HOME:-$HOME/.config}/StreamDeck/plugins" \
         "$HOME/.config/streamdeck/plugins" \
         "$HOME/.local/share/StreamDeck/plugins" \
         "$HOME/.config/Elgato/StreamDeck/plugins"
@@ -82,11 +82,6 @@ command -v cargo >/dev/null || die "cargo nao encontrado. Instale Rust: https://
 
 # --- build ---------------------------------------------------------------
 BIN="$ROOT/target/$PROFILE/soundbar-daemon"
-PLUGIN_BIN="$ROOT/target/$PROFILE/libSoundEffectsStreamDeck.so"
-case "$(os)" in
-  Darwin) PLUGIN_BIN="$ROOT/target/$PROFILE/libSoundEffectsStreamDeck.dylib" ;;
-  *)      PLUGIN_BIN="$ROOT/target/$PROFILE/SoundEffectsStreamDeck.dll" ;;
-esac
 
 if [ "$ACTION" != "rebuild" ] || [ ! -x "$BIN" ]; then
   say "Compilando (perfil $PROFILE) — pode demorar na primeira vez"
@@ -94,35 +89,40 @@ if [ "$ACTION" != "rebuild" ] || [ ! -x "$BIN" ]; then
 fi
 [ -x "$BIN" ] || die "binario do daemon nao encontrado em $BIN"
 
+# target-triple usado no manifest (CodePaths do OpenDeck)
+TRIPLE="$(rustc -vV | awk '/^host:/ {print $2}')"
+[ -n "$TRIPLE" ] || die "nao consegui detectar o target-triple"
+PLUGIN_BIN="$ROOT/target/$PROFILE/soundbar-plugin"
+[ -x "$PLUGIN_BIN" ] || die "binario do plugin nao encontrado em $PLUGIN_BIN"
+
 # --- empacotar o .sdPlugin ----------------------------------------------
 say "Montando $PLUGIN_NAME.sdPlugin"
 DEST="$(plugin_dir)/$PLUGIN_NAME.sdPlugin"
-mkdir -p "$DEST/Sounds"
-
-# binario nativo do plugin (se ja existir)
-for cand in \
-  "$ROOT/target/$PROFILE/libstreamdeck_ffi.so" \
-  "$ROOT/target/$PROFILE/libstreamdeck_ffi.dylib" \
-  "$ROOT/target/$PROFILE/streamdeck_ffi.dll"
-do
-  [ -f "$cand" ] && cp "$cand" "$DEST/$(basename "$cand")"
-done
-
-cp "$ROOT/plugin/manifest.json" "$DEST/" 2>/dev/null || warn "plugin/manifest.json ainda nao existe"
-cp "$ROOT/plugin/Uninstaller.sdPlugin" "$DEST/" 2>/dev/null || true
-cp -r "$ROOT/plugin/Actions"/* "$DEST/Actions" 2>/dev/null || true
-cp -r "$ROOT/plugin/PropertyInspector"/* "$DEST/PropertyInspector" 2>/dev/null || true
-
-# efeitos de exemplo, se existirem
-if [ -d "$ROOT/assets/sounds" ]; then
-  cp -rn "$ROOT/assets/sounds/." "$DEST/Sounds/" 2>/dev/null || true
-fi
-[ -n "$(ls -A "$DEST/Sounds" 2>/dev/null)" ] || warn "nenhum efeito em $DEST/Sounds"
-
-# --- config e sons do usuario -------------------------------------------
 CFG="$(config_dir)"
 mkdir -p "$CFG/sounds"
-[ -d "$DEST/Sounds" ] && cp -rn "$DEST/Sounds/." "$CFG/sounds/" 2>/dev/null || true
+
+# Limpa a pasta do plugin antes de montar, para nao deixar arquivos obsoletos
+# de versoes anteriores se acumulando.
+if [ -d "$DEST" ]; then
+  say "Limpando instalacao anterior"
+  rm -rf "$DEST"
+fi
+mkdir -p "$DEST/assets"
+
+# assets (manifest, icones, property inspector) vao para assets/
+cp -r "$ROOT/plugin/assets/." "$DEST/assets/" || die "falha ao copiar assets"
+
+# binario no caminho que o manifest declara para este triple
+mkdir -p "$DEST/$TRIPLE/bin"
+cp "$PLUGIN_BIN" "$DEST/$TRIPLE/bin/soundbar-plugin" || die "falha ao copiar o binario do plugin"
+chmod +x "$DEST/$TRIPLE/bin/soundbar-plugin"
+
+# efeitos: copiados para a config, nao para dentro do plugin
+if [ -d "$ROOT/assets/sounds" ]; then
+  cp -rn "$ROOT/assets/sounds/." "$CFG/sounds/" 2>/dev/null || true
+fi
+
+# --- config e sons do usuario -------------------------------------------
 say "Configuracao: $CFG"
 
 # --- instalar o daemon ---------------------------------------------------

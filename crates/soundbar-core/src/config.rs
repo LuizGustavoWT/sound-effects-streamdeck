@@ -146,6 +146,32 @@ impl Config {
         PathBuf::from(home).join(".config").join("soundbar-streamdeck")
     }
 
+    /// Descobre o diretorio de configuracao a usar.
+    ///
+    /// Ordem de precedencia:
+    ///   1. `SOUNDBAR_CONFIG_DIR`, se definido (o `--config` tem prioridade
+    ///      e e resolvido pelo binario antes de chamar esta funcao).
+    ///   2. Modo portatil: a pasta do proprio executavel, se ela contiver
+    ///      `sounds/` ou `config.json`. Isso deixa o daemon autocontido.
+    ///   3. A pasta do plugin instalado (`~/.config/streamdeck/plugins/
+    ///      SoundEffectsStreamDeck.sdPlugin`), se ela existir. Serve para a
+    ///      CLI, que fica em outro lugar mas precisa achar os mesmos dados.
+    ///   4. O diretorio padrao da plataforma.
+    pub fn resolve_dir() -> PathBuf {
+        if let Ok(d) = std::env::var("SOUNDBAR_CONFIG_DIR") {
+            if !d.trim().is_empty() {
+                return PathBuf::from(d);
+            }
+        }
+        if let Some(dir) = portable_dir() {
+            return dir;
+        }
+        if let Some(dir) = plugin_dir() {
+            return dir;
+        }
+        Config::default_dir()
+    }
+
     /// Valida e corrige valores impossiveis.
     pub fn sanitize(&mut self) {
         self.audio.master_gain = self.audio.master_gain.clamp(0.0, 4.0);
@@ -154,4 +180,43 @@ impl Config {
             self.audio.virtual_device = AudioConfig::default().virtual_device;
         }
     }
+}
+
+/// Pasta do executavel, se ela existir e tiver marcas de modo portatil.
+fn portable_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?.to_path_buf();
+
+    let has_sounds = dir.join("sounds").is_dir();
+    let has_config = dir.join("config.json").is_file();
+    if has_sounds || has_config {
+        Some(dir)
+    } else {
+        None
+    }
+}
+
+/// Procura a pasta do plugin instalado nos caminhos usuais de cada plataforma.
+///
+/// Usado pela CLI, que roda de `~/.local/bin` e nao consegue detectar o modo
+/// portatil pelo proprio executavel.
+pub fn plugin_dir() -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok().or_else(|| std::env::var("USERPROFILE").ok())?;
+
+    #[cfg(target_os = "linux")]
+    let candidates = [
+        PathBuf::from(&home).join(".config/streamdeck/plugins/SoundEffectsStreamDeck.sdPlugin"),
+        PathBuf::from(&home).join(".local/share/StreamDeck/plugins/SoundEffectsStreamDeck.sdPlugin"),
+        PathBuf::from(&home).join(".config/Elgato/StreamDeck/plugins/SoundEffectsStreamDeck.sdPlugin"),
+    ];
+
+    #[cfg(target_os = "macos")]
+    let candidates = [PathBuf::from(&home)
+        .join("Library/Application Support/StreamDeck/Plugins/SoundEffectsStreamDeck.sdPlugin")];
+
+    #[cfg(target_os = "windows")]
+    let candidates = [PathBuf::from(&home)
+        .join("AppData/Roaming/Elgato/StreamDeck/Plugins/SoundEffectsStreamDeck.sdPlugin")];
+
+    candidates.into_iter().find(|c| c.is_dir())
 }

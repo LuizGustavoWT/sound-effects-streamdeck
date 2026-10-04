@@ -39,7 +39,7 @@ fn real_main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     // --config <dir>
-    let mut config_dir = Config::default_dir();
+    let mut config_dir = Config::resolve_dir();
     let rest: Vec<String> = match args.iter().position(|a| a == "--config") {
         Some(i) => {
             config_dir = PathBuf::from(

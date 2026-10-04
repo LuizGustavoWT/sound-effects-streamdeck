@@ -56,7 +56,7 @@ escolha esse dispositivo para levar os efeitos a live/gravacao.";
 
 fn run(args: &[String]) -> Result<()> {
     // --config <dir> opcional
-    let mut config_dir = Config::default_dir();
+    let mut config_dir = Config::resolve_dir();
     if let Some(i) = args.iter().position(|a| a == "--config") {
         let v = args
             .get(i + 1)

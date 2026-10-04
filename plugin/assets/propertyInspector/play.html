@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="pt-BR">
+	<head>
+		<script>
+			// Estado dos efeitos, preenchido pelo plugin via sendToPropertyInspector.
+			let availableEffects = [];
+			let update = () => {};
+
+			function sendToPlugin(ws, context, payload) {
+				ws.send(JSON.stringify({ event: "setSettings", context: context, payload: payload }));
+			}
+
+			function populateEffects(select, current) {
+				select.innerHTML = "";
+				const empty = document.createElement("option");
+				empty.value = "";
+				empty.textContent = "(selecione um efeito)";
+				select.appendChild(empty);
+
+				availableEffects.forEach(function (eff) {
+					const o = document.createElement("option");
+					o.value = eff.id;
+					o.textContent = eff.name + (eff.duration_ms ? " (" + Math.round(eff.duration_ms / 100) / 10 + "s)" : "");
+					if (eff.id === current) o.selected = true;
+					select.appendChild(o);
+				});
+			}
+
+			function connectElgatoStreamDeckSocket(inPort, inPropertyInspectorUUID, inRegisterEvent, inInfo, inActionInfo) {
+				const websocket = new WebSocket("ws://localhost:" + inPort);
+				inActionInfo = JSON.parse(inActionInfo);
+				const context = inActionInfo.context;
+
+				websocket.onopen = () => {
+					websocket.send(JSON.stringify({ event: inRegisterEvent, uuid: inPropertyInspectorUUID }));
+				};
+
+				// Mensagens enviadas pelo plugin (lista de efeitos).
+				websocket.onmessage = (event) => {
+					try {
+						const msg = JSON.parse(event.data);
+						if (msg.event === "sendToPropertyInspector" && msg.payload && msg.payload.effects) {
+							availableEffects = msg.payload.effects;
+							populateEffects(document.getElementById("effect"), document.getElementById("effect").value);
+						}
+					} catch (err) {
+						console.error("PI: mensagem invalida", err);
+					}
+				};
+
+				const s = inActionInfo.payload.settings;
+				const effect = document.getElementById("effect");
+				effect.value = s.effect ?? "";
+				document.getElementById("gain").value = s.gain ?? 1.0;
+				document.getElementById("label").value = s.label ?? "";
+				document.getElementById("toggle").checked = s.toggle ?? true;
+
+				update = () => {
+					sendToPlugin(websocket, context, {
+						effect: effect.value,
+						gain: parseFloat(document.getElementById("gain").value) || 1.0,
+						label: document.getElementById("label").value,
+						toggle: document.getElementById("toggle").checked,
+					});
+				};
+
+				// Pede a lista assim que a tela abre (o plugin responde em will_appear).
+				update();
+			}
+		</script>
+		<link rel="stylesheet" href="sdpi.css" />
+	</head>
+	<body>
+		<div class="sdpi-item">
+			<div class="sdpi-item-label">Efeito</div>
+			<select id="effect" class="sdpi-item-value" onchange="update()"></select>
+		</div>
+
+		<div class="sdpi-item">
+			<div class="sdpi-item-label">Ganho (0.0 - 4.0)</div>
+			<input id="gain" type="number" step="0.1" min="0" max="4" class="sdpi-item-value" oninput="update()" />
+		</div>
+
+		<div class="sdpi-item">
+			<div class="sdpi-item-label">Texto na tecla</div>
+			<input id="label" type="text" class="sdpi-item-value" oninput="update()" />
+		</div>
+
+		<div class="sdpi-item">
+			<div class="sdpi-item-label">Modo toggle</div>
+			<input id="toggle" type="checkbox" class="sdpi-item-value" onchange="update()" />
+			<label for="toggle"><span></span></label>
+		</div>
+
+		<p style="padding: 0.5rem 0.75rem; color: #888; font-size: 0.8rem">
+			Se a lista estiver vazia, o daemon de audio não está rodando. Verifique com
+			<code>soundbar status</code> no terminal.
+		</p>
+	</body>
+</html>

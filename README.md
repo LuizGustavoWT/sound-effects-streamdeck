@@ -1,6 +1,8 @@
-# Sound Effects Stream Deck
+# Sound Effects Stream Deck (OpenDeck)
 
 Transforme seu Stream Deck em uma **soundbar de efeitos** para live e gravação: cada tecla dispara um efeito sonoro no meio da transmissão, e o áudio entra direto na sua live.
+
+Este plugin é feito para o **[OpenDeck](https://github.com/nekename/OpenDeck)** (a alternativa open-source ao software da Elgato no Linux/macOS/Windows). Ele usa a API [OpenAction](https://openaction.amankhanna.me/) nativa do OpenDeck — não precisa de Wine, não precisa do SDK fechado da Elgato.
 
 O plugin cria um **dispositivo de áudio virtual**, então você configura no OBS como qualquer outra fonte — sem plugin de áudio extra, sem driver, sem permissões de root.
 
@@ -148,7 +150,7 @@ Reinicie o daemon para aplicar: `systemctl --user restart soundbar`.
 - [x] Backend Pulse/PipeWire com null-sink virtual — testado no Linux
 - [x] Daemon + IPC (socket Unix) — testado no Linux
 - [x] CLI de controle e diagnóstico
-- [ ] Plugin `.sdPlugin` (manifest + FFI do host) — **em andamento**
+- [x] Plugin OpenDeck/OpenAction (manifest `CodePaths` + binário por target-triple) — testado no Linux
 - [ ] Backend macOS (CoreAudio / loopback)
 - [ ] Backend Windows (WASAPI loopback)
 - [ ] Zip multiplataforma na CI

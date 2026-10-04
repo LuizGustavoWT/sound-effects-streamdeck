@@ -1,0 +1,58 @@
+{
+	"Name": "Sound Effects Stream Deck",
+	"Description": "Transforma o Stream Deck em uma soundbar de efeitos para live e gravacao.",
+	"Author": "LuizGustavoWT",
+	"Version": "0.1.0",
+	"Category": "Sound",
+	"Icon": "icons/plugin",
+	"CodePathLin": "x86_64-unknown-linux-gnu/bin/soundbar-plugin",
+	"CodePathMac": "x86_64-apple-darwin/bin/soundbar-plugin",
+	"CodePathWin": "x86_64-pc-windows-msvc/bin/soundbar-plugin.exe",
+	"CodePaths": {
+		"x86_64-unknown-linux-gnu": "x86_64-unknown-linux-gnu/bin/soundbar-plugin",
+		"aarch64-unknown-linux-gnu": "aarch64-unknown-linux-gnu/bin/soundbar-plugin",
+		"x86_64-apple-darwin": "x86_64-apple-darwin/bin/soundbar-plugin",
+		"aarch64-apple-darwin": "aarch64-apple-darwin/bin/soundbar-plugin",
+		"x86_64-pc-windows-msvc": "x86_64-pc-windows-msvc/bin/soundbar-plugin.exe"
+	},
+	"OS": [
+		{ "Platform": "mac", "MinimumVersion": "11" },
+		{ "Platform": "windows", "MinimumVersion": "10" },
+		{ "Platform": "linux" }
+	],
+	"Actions": [
+		{
+			"Name": "Play Effect",
+			"UUID": "com.soundbar.play",
+			"Icon": "icons/play",
+			"States": [
+				{
+					"Image": "icons/play-idle",
+					"TitleAlignment": "bottom",
+					"TitleColor": "#FFFFFF",
+					"FontSize": "12"
+				},
+				{
+					"Image": "icons/play-active",
+					"TitleAlignment": "bottom",
+					"TitleColor": "#FFFFFF",
+					"FontSize": "12"
+				}
+			],
+			"Controllers": ["Keypad", "Encoder"],
+			"SupportedInMultiActions": true,
+			"Tooltip": "Soltar efeito sonoro no meio da live",
+			"PropertyInspectorPath": "propertyInspector/play.html"
+		},
+		{
+			"Name": "Stop All",
+			"UUID": "com.soundbar.stopall",
+			"Icon": "icons/stop",
+			"States": [{ "Image": "icons/stop" }],
+			"Controllers": ["Keypad", "Encoder"],
+			"SupportedInMultiActions": true,
+			"Tooltip": "Parar todos os efeitos",
+			"PropertyInspectorPath": "propertyInspector/none.html"
+		}
+	]
+}

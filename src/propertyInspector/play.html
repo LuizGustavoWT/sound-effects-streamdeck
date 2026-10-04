@@ -53,11 +53,52 @@
 			}
 
 			function pickFile() {
-				// Atualiza primeiro, depois pede o dialogo nativo ao plugin.
-				update();
-				sendToPlugin(Object.assign(currentSettings(), { pickFile: true }));
-				document.getElementById("status").textContent =
-					"Escolha o arquivo na janela que vai abrir...";
+				// O seletor nativo do navegador funciona dentro do sandbox do
+				// OpenDeck; um dialogo do sistema, nao.
+				document.getElementById("fileInput").click();
+			}
+
+			function readAsDataURL(file) {
+				return new Promise(function (resolve, reject) {
+					const fr = new FileReader();
+					fr.onload = () => resolve(fr.result);
+					fr.onerror = () => reject(new Error("falha ao ler o arquivo"));
+					fr.readAsDataURL(file);
+				});
+			}
+
+			async function onFileChosen(ev) {
+				const file = ev.target.files[0];
+				if (!file) return;
+
+				const maxBytes = 50 * 1024 * 1024;
+				if (file.size > maxBytes) {
+					showStatus("Arquivo muito grande (max 50 MB)", true);
+					ev.target.value = "";
+					return;
+				}
+
+				showStatus("Enviando " + file.name + " (" + Math.round(file.size / 1024) + " KB)...", false);
+
+				try {
+					const data = await readAsDataURL(file);
+					sendToPlugin(
+						Object.assign(currentSettings(), {
+							importData: data,
+							importName: file.name,
+						})
+					);
+					showStatus("Processando " + file.name + "...", false);
+				} catch (err) {
+					showStatus("Erro: " + err.message, true);
+				}
+				ev.target.value = "";
+			}
+
+			function showStatus(text, isError) {
+				const el = document.getElementById("status");
+				el.textContent = text;
+				el.className = isError ? "err" : "";
 			}
 
 			function connectElgatoStreamDeckSocket(inPort, inPropertyInspectorUUID, inRegisterEvent, inInfo, inActionInfo) {
@@ -80,11 +121,10 @@
 								// O plugin ja atualizou as settings; reflete aqui.
 								document.getElementById("effect").value = p.selected;
 								update();
-								document.getElementById("status").textContent =
-									"Importado: " + p.selected;
+								showStatus("Importado: " + p.selected, false);
 							}
 						} else if (p.error) {
-							document.getElementById("status").textContent = "Erro: " + p.error;
+							showStatus("Erro: " + p.error, true);
 						}
 					} catch (err) {
 						console.error("PI: mensagem invalida", err);
@@ -182,6 +222,8 @@
 			<input id="toggle" type="checkbox" class="sdpi-item-value" onchange="update()" />
 			<label for="toggle"><span></span></label>
 		</div>
+
+		<input type="file" id="fileInput" accept="audio/*,.wav,.mp3,.flac,.ogg,.oga,.opus,.aiff,.m4a,.aac" style="display:none" onchange="onFileChosen(event)" />
 
 		<div id="status">
 			Clique em <b>Escolher arquivo...</b> para importar um mp3, wav, ogg ou flac.

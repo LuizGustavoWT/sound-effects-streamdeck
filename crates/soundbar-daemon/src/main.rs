@@ -219,19 +219,22 @@ fn dispatch(msg: ClientMessage, state: &Arc<AppState>) -> Option<DaemonMessage> 
             effects: sfx::infos(&state.library.read().unwrap_or_else(|e| e.into_inner())),
         }),
 
-        ClientMessage::ReloadEffects => {
-            match load_library(&state.sounds_dir) {
-                Ok(new_lib) => {
-                    let count = new_lib.len();
-                    *state.library.write().unwrap_or_else(|e| e.into_inner()) = new_lib;
-                    eprintln!("[soundbar] {count} efeitos recarregados de {}", state.sounds_dir.display());
-                    Some(DaemonMessage::Effects {
-                        effects: sfx::infos(&state.library.read().unwrap_or_else(|e| e.into_inner())),
-                    })
-                }
-                Err(e) => Some(DaemonMessage::Error { message: format!("falha no reload: {e:#}") }),
+        ClientMessage::ReloadEffects => match load_library(&state.sounds_dir) {
+            Ok(new_lib) => {
+                let count = new_lib.len();
+                *state.library.write().unwrap_or_else(|e| e.into_inner()) = new_lib;
+                eprintln!(
+                    "[soundbar] {count} efeitos recarregados de {}",
+                    state.sounds_dir.display()
+                );
+                Some(DaemonMessage::Effects {
+                    effects: sfx::infos(&state.library.read().unwrap_or_else(|e| e.into_inner())),
+                })
             }
-        }
+            Err(e) => Some(DaemonMessage::Error {
+                message: format!("falha no reload: {e:#}"),
+            }),
+        },
 
         ClientMessage::Play { effect_id, gain } => {
             let sound = state

@@ -121,28 +121,84 @@ impl Config {
         Ok(())
     }
 
-    /// Diretorio padrao de configuracao por plataforma.
-    pub fn default_dir() -> PathBuf {
-        if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-            if !xdg.is_empty() {
-                return PathBuf::from(xdg).join("soundbar-streamdeck");
+    /// Home real do usuario.
+    ///
+    /// Dentro do sandbox do Flatpak, `$HOME` aponta para `.var/app/<id>/`,
+    /// e o plugin procuraria o daemon no lugar errado. `/etc/passwd` traz o
+    /// home de verdade, entao usamos ele quando o path parece um sandbox.
+    pub fn real_home() -> PathBuf {
+        let home_env = std::env::var("HOME").unwrap_or_default();
+
+        // Path de sandbox: termina em /.var/app/<id>/ ou /.local/share/flatpak/...
+        let is_sandbox =
+            home_env.contains("/.var/app/") || home_env.contains("/.local/share/flatpak/");
+
+        if !is_sandbox {
+            return PathBuf::from(&home_env);
+        }
+
+        // Procura o home real no passwd pelo nome de usuario logado.
+        let user = std::env::var("USER")
+            .or_else(|_| std::env::var("LOGNAME"))
+            .or_else(|_| std::env::var("USERNAME"))
+            .unwrap_or_default();
+
+        if !user.is_empty() {
+            if let Ok(passwd) = std::fs::read_to_string("/etc/passwd") {
+                for line in passwd.lines() {
+                    let mut parts = line.split(':');
+                    if parts.next() == Some(user.as_str()) {
+                        if let Some(h) = parts.nth(4) {
+                            if !h.is_empty() {
+                                return PathBuf::from(h);
+                            }
+                        }
+                    }
+                }
             }
         }
+
+        // Ultimo recurso: tira o sufixo do sandbox.
+        if let Some(idx) = home_env.find("/.var/app/") {
+            return PathBuf::from(&home_env[..idx]);
+        }
+        PathBuf::from(&home_env)
+    }
+
+    /// Diretorio padrao de configuracao por plataforma.
+    pub fn default_dir() -> PathBuf {
         #[cfg(target_os = "windows")]
         {
             if let Ok(appdata) = std::env::var("APPDATA") {
                 return PathBuf::from(appdata).join("soundbar-streamdeck");
             }
         }
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+
+        let home = Config::real_home();
+
+        // `XDG_CONFIG_HOME` e respeitado, mas nunca quando aponta para dentro
+        // do sandbox do Flatpak: o daemon roda no host, em `~/.config`.
+        let is_sandbox = home.as_os_str().is_empty()
+            || std::env::var("HOME")
+                .map(|h| h.contains("/.var/app/"))
+                .unwrap_or(false);
+
+        if !is_sandbox {
+            if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+                if !xdg.is_empty() && !xdg.contains("/.var/app/") {
+                    return PathBuf::from(xdg).join("soundbar-streamdeck");
+                }
+            }
+        }
+
         #[cfg(target_os = "macos")]
         {
-            PathBuf::from(&home).join("Library/Application Support/soundbar-streamdeck")
+            home.join("Library/Application Support/soundbar-streamdeck")
         }
         #[cfg(not(target_os = "macos"))]
-        PathBuf::from(home)
-            .join(".config")
-            .join("soundbar-streamdeck")
+        {
+            home.join(".config").join("soundbar-streamdeck")
+        }
     }
 
     /// Descobre o diretorio de configuracao a usar.

@@ -17,6 +17,15 @@ use std::time::Duration;
 use crate::mixer::Mixer;
 use soundbar_core::sfx::SoundLibrary;
 
+/// Remove espacos da descricao do dispositivo.
+///
+/// O parser de `load-module` do PulseAudio/PipeWire trunca o valor no
+/// primeiro espaco, mesmo com aspas. Uma descricao sem espacos e o que
+/// realmente chega ao sistema, e e o que o OBS mostra na lista.
+fn compact(s: &str) -> String {
+    s.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
 /// Cria (ou verifica) o null-sink virtual via pactl.
 pub fn ensure_null_sink(name: &str, description: &str) -> Result<()> {
     let existing = std::process::Command::new("pactl")
@@ -38,7 +47,12 @@ pub fn ensure_null_sink(name: &str, description: &str) -> Result<()> {
             "load-module",
             "module-null-sink",
             &format!("sink_name={name}"),
-            &format!("sink_properties=device.description={description}"),
+            // O parser de modulos do Pulse corta o valor no primeiro espaco,
+            // com ou sem aspas. Por isso a descricao vai sem espacos.
+            &format!(
+                "sink_properties=device.description={}",
+                compact(description)
+            ),
             "rate=48000",
             "channels=2",
             "format=s16le",
@@ -189,7 +203,11 @@ impl PulseOutput {
 
             buf.resize(frames * 2, 0);
             {
-                let lib = shared.library.read().unwrap_or_else(|e| e.into_inner()).clone();
+                let lib = shared
+                    .library
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone();
                 let mut mx = shared.mixer.lock().unwrap_or_else(|e| e.into_inner());
                 mx.mix_into(&mut buf, &move |id: &str| lib.get(id).cloned());
             }

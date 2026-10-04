@@ -169,20 +169,31 @@ impl Action for PlayEffect {
         self.key_up(instance, settings).await
     }
 
-    /// Recebe mensagens do Property Inspector. Usado pelo botao
-    /// "Escolher arquivo", que abre um dialogo nativo fora do webview.
+    /// Recebe mensagens do Property Inspector.
+    ///
+    /// O arquivo chega em base64 dentro do payload, porque o seletor nativo
+    /// do navegador (`<input type="file">`) roda dentro do sandbox do
+    /// OpenDeck e nao consegue abrir uma janela do sistema por conta propria.
     async fn send_to_plugin(
         &self,
         instance: &Instance,
         settings: &Self::Settings,
         payload: &serde_json::Value,
     ) -> OpenActionResult<()> {
-        if payload.get("pickFile").and_then(|v| v.as_bool()) != Some(true) {
+        let Some(data) = payload.get("importData").and_then(|v| v.as_str()) else {
             return Ok(());
-        }
-        match import_sound().await {
-            Ok(Some(imported)) => {
-                log::info!("soundbar: importado '{}' como id '{}'", imported.name, imported.id);
+        };
+        let Some(name) = payload.get("importName").and_then(|v| v.as_str()) else {
+            return Ok(());
+        };
+
+        match save_imported(data, name) {
+            Ok(imported) => {
+                log::info!(
+                    "soundbar: importado '{}' como id '{}'",
+                    imported.name,
+                    imported.id
+                );
                 let mut s = settings.clone();
                 s.effect = imported.id.clone();
                 instance.set_settings(&s).await.ok();
@@ -191,7 +202,6 @@ impl Action for PlayEffect {
                     instance.send_to_property_inspector(msg).await.ok();
                 }
             }
-            Ok(None) => log::info!("soundbar: importacao cancelada"),
             Err(e) => {
                 log::warn!("soundbar: falha ao importar: {e:#}");
                 let msg = serde_json::json!({ "error": format!("{e:#}") });
@@ -217,50 +227,56 @@ impl Action for PlayEffect {
     }
 }
 
-/// Abre o dialogo nativo de escolha e importa o arquivo para a pasta de sons.
+/// Efeito recem-importado pelo usuario.
+struct ImportedSound {
+    id: String,
+    name: String,
+}
+
+/// Salva um arquivo enviado pelo Property Inspector em base64.
 ///
-/// O Property Inspector roda em um webview isolado e nao tem acesso ao
-/// filesystem do usuario, entao o dialogo e aberto por um processo externo
-/// e o caminho volta por stdout.
-///
-/// Retorna `None` se o usuario cancelar.
-async fn import_sound() -> Result<Option<ImportedSound>> {
+/// O navegador entrega o conteudo do arquivo, nao o caminho: dentro do
+/// sandbox do OpenDeck nao ha acesso ao filesystem do usuario.
+fn save_imported(data_b64: &str, name: &str) -> Result<ImportedSound> {
+    use base64::Engine;
+
     let daemon = Daemon::new();
     let sounds_dir = sounds_dir(&daemon.config_dir)?;
 
-
-    // 1. Abre o dialogo nativo.
-    let chosen = match pick_file(&sounds_dir) {
-        Ok(c) => c,
-        Err(e) => return Err(e),
-    };
-    let Some(chosen) = chosen else {
-        return Ok(None);
-    };
-
-    // 2. Valida a extensao antes de copiar.
-    let src = PathBuf::from(&chosen);
-    let ext = src
+    // Extensao pelo nome original.
+    let ext = Path::new(name)
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_ascii_lowercase())
         .unwrap_or_default();
-    const OK: &[&str] = &["wav", "mp3", "flac", "ogg", "oga", "opus", "aiff", "m4a", "aac"];
+    const OK: &[&str] = &[
+        "wav", "mp3", "flac", "ogg", "oga", "opus", "aiff", "m4a", "aac", "wma",
+    ];
     if !OK.contains(&ext.as_str()) {
         return Err(anyhow::anyhow!(
             "formato '{ext}' nao suportado. Use: wav, mp3, flac, ogg, opus, aiff, m4a."
         ));
     }
-    if !src.is_file() {
-        return Err(anyhow::anyhow!("arquivo nao encontrado: {}", src.display()));
+
+    // O navegador pode mandar data URL (data:audio/mpeg;base64,...).
+    let b64 = match data_b64.split_once(",") {
+        Some((_, rest)) if data_b64.starts_with("data:") => rest,
+        _ => data_b64,
+    };
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64.trim())
+        .map_err(|e| anyhow::anyhow!("conteudo invalido: {e}"))?;
+    if bytes.is_empty() {
+        return Err(anyhow::anyhow!("arquivo vazio"));
     }
 
-    // 3. Copia para a pasta de sons, sem sobrescrever (id precisa ser unico).
-    let stem = src
+    let stem = Path::new(name)
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("efeito")
         .to_string();
+
+    // Nao sobrescreve: o id precisa ser unico para nao quebrar teclas ja feitas.
     let mut dest = sounds_dir.join(format!("{stem}.{ext}"));
     if dest.exists() {
         let mut n = 2;
@@ -273,9 +289,10 @@ async fn import_sound() -> Result<Option<ImportedSound>> {
             n += 1;
         }
     }
+
     std::fs::create_dir_all(&sounds_dir)?;
-    std::fs::copy(&src, &dest)
-        .map_err(|e| anyhow::anyhow!("falha ao copiar para {}: {e}", dest.display()))?;
+    std::fs::write(&dest, &bytes)
+        .map_err(|e| anyhow::anyhow!("falha ao escrever {}: {e}", dest.display()))?;
 
     let id = dest
         .file_stem()
@@ -283,94 +300,18 @@ async fn import_sound() -> Result<Option<ImportedSound>> {
         .unwrap_or(&stem)
         .to_string();
 
-    // 4. Avisa o daemon para recarregar: os sons sao lidos so no startup,
-    //    entao sem isto o arquivo novo nao poderia ser tocado.
-    if let Ok(Some(DaemonMessage::Effects { .. })) = daemon.request(
-        &ClientMessage::ReloadEffects,
-        Duration::from_secs(5),
-    ) {
+    // Avisa o daemon para recarregar: os sons sao lidos so no startup.
+    if let Ok(Some(DaemonMessage::Effects { .. })) =
+        daemon.request(&ClientMessage::ReloadEffects, Duration::from_secs(5))
+    {
         log::info!("soundbar: daemon recarregou a biblioteca");
     } else {
-        log::warn!("soundbar: daemon nao recarregou; reinicie com systemctl --user restart soundbar");
+        log::warn!(
+            "soundbar: daemon nao recarregou; reinicie com systemctl --user restart soundbar"
+        );
     }
 
-    Ok(Some(ImportedSound { id, name: stem }))
-}
-
-/// Efeito recem-importado pelo usuario.
-struct ImportedSound {
-    id: String,
-    name: String,
-}
-
-/// Abre o dialogo de escolha de arquivo e devolve o caminho escolhido.
-///
-/// Prefere o script GTK que acompanha o plugin (nao depende de zenity).
-/// Se nao encontrar, tenta as ferramentas de terminal mais comuns.
-/// Retorna `None` se o usuario cancelar.
-fn pick_file(sounds_dir: &Path) -> Result<Option<String>> {
-    // 1. Script GTK que vem junto com o plugin.
-    if let Some(script) = scripts_dir().map(|d| d.join("soundbar_picker.py")) {
-        if script.is_file() {
-            match std::process::Command::new("python3")
-                .arg(&script)
-                .env("SOUNDBAR_SOUNDS_DIR", sounds_dir)
-                .output()
-            {
-                Ok(o) => {
-                    let out = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                    if out.is_empty() {
-                        return Ok(None);
-                    }
-                    return Ok(Some(out));
-                }
-                Err(e) => {
-                    log::warn!("script GTK falhou: {e}");
-                }
-            }
-        }
-    }
-
-    // 2. Ferramentas de terminal, se existirem.
-    for (cmd, extra) in [
-        ("zenity", vec!["--file-selection", "--title=Escolha um efeito sonoro"]),
-        ("kdialog", vec!["--getopenfilename", "."]),
-        ("yad", vec!["--file-selection", "--title=Escolha um efeito sonoro"]),
-    ] {
-        let installed = std::process::Command::new(cmd)
-            .arg("--version")
-            .output()
-            .map(|p| p.status.success())
-            .unwrap_or(false);
-        if !installed {
-            continue;
-        }
-        if let Ok(o) = std::process::Command::new(cmd).args(&extra).output() {
-            let out = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if out.is_empty() {
-                return Ok(None);
-            }
-            return Ok(Some(out));
-        }
-    }
-
-    Err(anyhow::anyhow!(
-        "nao encontrei como abrir o seletor de arquivos.\n\
-         Instale o zenity (sudo apt install zenity), ou copie o arquivo em:\n  {}",
-        sounds_dir.display()
-    ))
-}
-
-/// Pasta `scripts/` do plugin instalado, relativo ao executavel.
-fn scripts_dir() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let dir = exe.parent()?.to_path_buf();
-    let cand = dir.join("scripts");
-    if cand.is_dir() {
-        Some(cand)
-    } else {
-        None
-    }
+    Ok(ImportedSound { id, name: stem })
 }
 
 /// Pasta de sons, a partir da config.

@@ -97,7 +97,8 @@ fn send(config_dir: &std::path::Path, msg: &ClientMessage) -> Result<Option<Daem
 
 fn cmd_list(config_dir: &std::path::Path) -> Result<()> {
     // Tenta o daemon; se nao estiver de pe, le os sons direto do disco.
-    if let Ok(Some(DaemonMessage::Effects { effects })) = send(config_dir, &ClientMessage::ListEffects)
+    if let Ok(Some(DaemonMessage::Effects { effects })) =
+        send(config_dir, &ClientMessage::ListEffects)
     {
         if effects.is_empty() {
             println!("(nenhum efeito carregado)");
@@ -152,8 +153,17 @@ fn cmd_play(args: &[String], config_dir: &std::path::Path) -> Result<()> {
     }
     let id = effect_id.ok_or_else(|| anyhow!("uso: soundbar play <id> [-g <ganho>]"))?;
 
-    match send(config_dir, &ClientMessage::Play { effect_id: id.clone(), gain: Some(gain) })? {
-        Some(DaemonMessage::Playing { instance_id, effect_id }) => {
+    match send(
+        config_dir,
+        &ClientMessage::Play {
+            effect_id: id.clone(),
+            gain: Some(gain),
+        },
+    )? {
+        Some(DaemonMessage::Playing {
+            instance_id,
+            effect_id,
+        }) => {
             println!("tocando '{effect_id}' (instancia {instance_id}, ganho {gain})");
             Ok(())
         }
@@ -163,7 +173,10 @@ fn cmd_play(args: &[String], config_dir: &std::path::Path) -> Result<()> {
 }
 
 fn cmd_status(config_dir: &std::path::Path) -> Result<()> {
-    match send(config_dir, &ClientMessage::hello("cli", soundbar_core::protocol::DeviceKind::Unknown))? {
+    match send(
+        config_dir,
+        &ClientMessage::hello("cli", soundbar_core::protocol::DeviceKind::Unknown),
+    )? {
         Some(DaemonMessage::Welcome { version, device }) => {
             println!("daemon: rodando (protocolo v{version})");
             let _ = device;
@@ -173,20 +186,23 @@ fn cmd_status(config_dir: &std::path::Path) -> Result<()> {
         }
         _ => println!("daemon: sem resposta"),
     }
-    match send(config_dir, &ClientMessage::Ping)? {
-        Some(DaemonMessage::Pong { host, uptime_ms }) => {
-            println!("{host} — no ar ha {}s", uptime_ms / 1000);
-        }
-        _ => {}
+    if let Some(DaemonMessage::Pong { host, uptime_ms }) = send(config_dir, &ClientMessage::Ping)? {
+        println!("{host} — no ar ha {}s", uptime_ms / 1000);
     }
     Ok(())
 }
 
 fn cmd_config(config_dir: &std::path::Path) -> Result<()> {
     println!("config:  {}", config_dir.display());
-    println!("socket:  {}", Endpoint::from_config_dir(config_dir).display());
+    println!(
+        "socket:  {}",
+        Endpoint::from_config_dir(config_dir).display()
+    );
     match Config::load_dir(config_dir) {
-        Ok(cfg) => println!("sons:    {}", cfg.sounds_dir.clone().unwrap_or_default().display()),
+        Ok(cfg) => println!(
+            "sons:    {}",
+            cfg.sounds_dir.clone().unwrap_or_default().display()
+        ),
         Err(e) => println!("sons:    (erro ao ler config: {e})"),
     }
     Ok(())

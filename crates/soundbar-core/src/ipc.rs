@@ -90,12 +90,18 @@ impl Conn {
     #[cfg(unix)]
     fn from_unix(s: UnixStream) -> Result<Conn> {
         let w = s.try_clone()?;
-        Ok(Conn { reader: Box::new(BufReader::new(s)), writer: Box::new(w) })
+        Ok(Conn {
+            reader: Box::new(BufReader::new(s)),
+            writer: Box::new(w),
+        })
     }
 
     fn from_tcp(s: TcpStream) -> Result<Conn> {
         let w = s.try_clone()?;
-        Ok(Conn { reader: Box::new(BufReader::new(s)), writer: Box::new(w) })
+        Ok(Conn {
+            reader: Box::new(BufReader::new(s)),
+            writer: Box::new(w),
+        })
     }
 
     /// Aplica timeouts de leitura e escrita.

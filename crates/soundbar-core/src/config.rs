@@ -37,21 +37,16 @@ impl From<serde_json::Error> for ConfigError {
 }
 
 /// Para onde o audio e enviado.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum OutputDeviceKind {
     /// Dispositivo virtual criado pelo proprio daemon.
+    #[default]
     Virtual,
     /// Um device de saida existente, escolhido por nome.
     Named(String),
     /// Default do sistema.
     Default,
-}
-
-impl Default for OutputDeviceKind {
-    fn default() -> Self {
-        OutputDeviceKind::Virtual
-    }
 }
 
 /// Configuracao de audio e caminhos.
@@ -118,7 +113,10 @@ impl Config {
         std::fs::create_dir_all(dir)?;
         let path = dir.join("config.json");
         let tmp = dir.join("config.json.tmp");
-        std::fs::write(&tmp, serde_json::to_string_pretty(self).map_err(ConfigError::Serialize)?)?;
+        std::fs::write(
+            &tmp,
+            serde_json::to_string_pretty(self).map_err(ConfigError::Serialize)?,
+        )?;
         std::fs::rename(&tmp, &path)?;
         Ok(())
     }
@@ -139,11 +137,12 @@ impl Config {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
         #[cfg(target_os = "macos")]
         {
-            return PathBuf::from(&home)
-                .join("Library/Application Support/soundbar-streamdeck");
+            PathBuf::from(&home).join("Library/Application Support/soundbar-streamdeck")
         }
         #[cfg(not(target_os = "macos"))]
-        PathBuf::from(home).join(".config").join("soundbar-streamdeck")
+        PathBuf::from(home)
+            .join(".config")
+            .join("soundbar-streamdeck")
     }
 
     /// Descobre o diretorio de configuracao a usar.
@@ -201,13 +200,17 @@ fn portable_dir() -> Option<PathBuf> {
 /// Usado pela CLI, que roda de `~/.local/bin` e nao consegue detectar o modo
 /// portatil pelo proprio executavel.
 pub fn plugin_dir() -> Option<PathBuf> {
-    let home = std::env::var("HOME").ok().or_else(|| std::env::var("USERPROFILE").ok())?;
+    let home = std::env::var("HOME")
+        .ok()
+        .or_else(|| std::env::var("USERPROFILE").ok())?;
 
     #[cfg(target_os = "linux")]
     let candidates = [
         PathBuf::from(&home).join(".config/streamdeck/plugins/SoundEffectsStreamDeck.sdPlugin"),
-        PathBuf::from(&home).join(".local/share/StreamDeck/plugins/SoundEffectsStreamDeck.sdPlugin"),
-        PathBuf::from(&home).join(".config/Elgato/StreamDeck/plugins/SoundEffectsStreamDeck.sdPlugin"),
+        PathBuf::from(&home)
+            .join(".local/share/StreamDeck/plugins/SoundEffectsStreamDeck.sdPlugin"),
+        PathBuf::from(&home)
+            .join(".config/Elgato/StreamDeck/plugins/SoundEffectsStreamDeck.sdPlugin"),
     ];
 
     #[cfg(target_os = "macos")]

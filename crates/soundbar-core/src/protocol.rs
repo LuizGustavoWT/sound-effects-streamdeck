@@ -15,11 +15,18 @@ pub const PROTOCOL_VERSION: u32 = 1;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
     /// Handshake inicial.
-    Hello { version: u32, host: String, device: DeviceKind },
+    Hello {
+        version: u32,
+        host: String,
+        device: DeviceKind,
+    },
     /// Pede a lista de efeitos disponiveis.
     ListEffects,
     /// Toca um efeito.
-    Play { effect_id: String, gain: Option<f32> },
+    Play {
+        effect_id: String,
+        gain: Option<f32>,
+    },
     /// Para um efeito (por id de instancia).
     Stop { instance_id: u64 },
     /// Para tudo.
@@ -34,7 +41,11 @@ pub enum ClientMessage {
 
 impl ClientMessage {
     pub fn hello(host: impl Into<String>, device: DeviceKind) -> Self {
-        ClientMessage::Hello { version: PROTOCOL_VERSION, host: host.into(), device }
+        ClientMessage::Hello {
+            version: PROTOCOL_VERSION,
+            host: host.into(),
+            device,
+        }
     }
 }
 
@@ -67,7 +78,10 @@ impl DeviceKind {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DaemonMessage {
     /// Handshake aceito.
-    Welcome { version: u32, device: Option<String> },
+    Welcome {
+        version: u32,
+        device: Option<String>,
+    },
     /// Lista de efeitos.
     Effects { effects: Vec<EffectInfo> },
     /// Confirma que comecou a tocar.
@@ -155,16 +169,24 @@ mod tests {
 
     #[test]
     fn client_message_roundtrip() {
-        let m = ClientMessage::Play { effect_id: "airhorn".into(), gain: Some(0.5) };
+        let m = ClientMessage::Play {
+            effect_id: "airhorn".into(),
+            gain: Some(0.5),
+        };
         let s = serde_json::to_string(&m).unwrap();
         assert!(s.contains("\"type\":\"play\""));
         let back: ClientMessage = serde_json::from_str(&s).unwrap();
-        assert!(matches!(back, ClientMessage::Play { ref effect_id, .. } if effect_id == "airhorn"));
+        assert!(
+            matches!(back, ClientMessage::Play { ref effect_id, .. } if effect_id == "airhorn")
+        );
     }
 
     #[test]
     fn daemon_message_roundtrip() {
-        let m = DaemonMessage::SlotState { key: "0:0".into(), state: SlotState::Playing };
+        let m = DaemonMessage::SlotState {
+            key: "0:0".into(),
+            state: SlotState::Playing,
+        };
         let s = serde_json::to_string(&m).unwrap();
         let back: DaemonMessage = serde_json::from_str(&s).unwrap();
         assert!(matches!(back, DaemonMessage::SlotState { .. }));

@@ -87,7 +87,10 @@ fn run(args: &[String]) -> Result<()> {
     }
 
     let state = Arc::new(AppState {
-        mixer: Arc::new(Mutex::new(Mixer::new(cfg.audio.master_gain, cfg.audio.max_polyphony))),
+        mixer: Arc::new(Mutex::new(Mixer::new(
+            cfg.audio.master_gain,
+            cfg.audio.max_polyphony,
+        ))),
         library,
         started: Instant::now(),
     });
@@ -103,8 +106,11 @@ fn run(args: &[String]) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
         use soundbar_audio::pulse::{PulseOutput, Shared};
-        let out = PulseOutput::new(&cfg.audio.virtual_device, &cfg.audio.virtual_device_description)
-            .context("falha ao preparar dispositivo de saida")?;
+        let out = PulseOutput::new(
+            &cfg.audio.virtual_device,
+            &cfg.audio.virtual_device_description,
+        )
+        .context("falha ao preparar dispositivo de saida")?;
 
         let run_flag = running.clone();
         let audio_state = state.clone();
@@ -112,7 +118,10 @@ fn run(args: &[String]) -> Result<()> {
         std::thread::spawn(move || {
             // Compartilha o mesmo mutex do AppState, para que os comandos IPC
             //afetam exatamente o que o loop de audio esta escrevendo.
-            let shared = Shared { mixer: audio_state.mixer.clone(), library: audio_state.library.clone() };
+            let shared = Shared {
+                mixer: audio_state.mixer.clone(),
+                library: audio_state.library.clone(),
+            };
             if let Err(e) = out.run(shared, should) {
                 eprintln!("[soundbar] loop de audio encerrou: {e:#}");
             }
@@ -143,7 +152,10 @@ fn run(args: &[String]) -> Result<()> {
 fn load_library(dir: &std::path::Path) -> Result<SoundLibrary> {
     let lib = sfx::load_dir(dir)?;
     for (id, s) in &lib {
-        eprintln!("[soundbar]   efeito '{id}' ({:?}, {}ms)", s.sample_rate, s.duration_ms);
+        eprintln!(
+            "[soundbar]   efeito '{id}' ({:?}, {}ms)",
+            s.sample_rate, s.duration_ms
+        );
     }
     Ok(lib)
 }
@@ -159,7 +171,9 @@ fn handle_client(mut conn: Conn, state: Arc<AppState>) -> Result<()> {
         let msg: ClientMessage = match serde_json::from_str(&line) {
             Ok(m) => m,
             Err(e) => {
-                let err = DaemonMessage::Error { message: format!("JSON invalido: {e}") };
+                let err = DaemonMessage::Error {
+                    message: format!("JSON invalido: {e}"),
+                };
                 conn.write_line(&serde_json::to_string(&err)?)?;
                 continue;
             }
@@ -175,7 +189,11 @@ fn handle_client(mut conn: Conn, state: Arc<AppState>) -> Result<()> {
 
 fn dispatch(msg: ClientMessage, state: &Arc<AppState>) -> Option<DaemonMessage> {
     match msg {
-        ClientMessage::Hello { version, host, device } => {
+        ClientMessage::Hello {
+            version,
+            host,
+            device,
+        } => {
             if version != soundbar_core::protocol::PROTOCOL_VERSION {
                 return Some(DaemonMessage::Error {
                     message: format!(
@@ -207,7 +225,10 @@ fn dispatch(msg: ClientMessage, state: &Arc<AppState>) -> Option<DaemonMessage> 
                 mx.play(sound, g, true, None)
             };
             match id {
-                Some(i) => Some(DaemonMessage::Playing { instance_id: i, effect_id }),
+                Some(i) => Some(DaemonMessage::Playing {
+                    instance_id: i,
+                    effect_id,
+                }),
                 None => Some(DaemonMessage::Error {
                     message: "polyphony lotada".into(),
                 }),
@@ -222,7 +243,9 @@ fn dispatch(msg: ClientMessage, state: &Arc<AppState>) -> Option<DaemonMessage> 
             if ok {
                 Some(DaemonMessage::Stopped { instance_id })
             } else {
-                Some(DaemonMessage::Error { message: format!("instancia {instance_id} nao existe") })
+                Some(DaemonMessage::Error {
+                    message: format!("instancia {instance_id} nao existe"),
+                })
             }
         }
 

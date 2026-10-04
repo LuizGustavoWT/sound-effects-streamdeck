@@ -14,8 +14,8 @@ use pulse::stream::{FlagSet as StreamFlags, SeekMode, State as StreamState, Stre
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use soundbar_core::sfx::SoundLibrary;
 use crate::mixer::Mixer;
+use soundbar_core::sfx::SoundLibrary;
 
 /// Cria (ou verifica) o null-sink virtual via pactl.
 pub fn ensure_null_sink(name: &str, description: &str) -> Result<()> {
@@ -25,7 +25,10 @@ pub fn ensure_null_sink(name: &str, description: &str) -> Result<()> {
 
     if existing.status.success() {
         let out = String::from_utf8_lossy(&existing.stdout);
-        if out.lines().any(|l| l.split_whitespace().nth(1) == Some(name)) {
+        if out
+            .lines()
+            .any(|l| l.split_whitespace().nth(1) == Some(name))
+        {
             return Ok(());
         }
     }
@@ -53,7 +56,10 @@ pub fn ensure_null_sink(name: &str, description: &str) -> Result<()> {
 /// Remove o null-sink (usado no shutdown / --uninstall).
 pub fn remove_null_sink(name: &str) {
     let _ = std::process::Command::new("pactl")
-        .args(["unload-module", &format!("module-null-sink sink_name={name}")])
+        .args([
+            "unload-module",
+            &format!("module-null-sink sink_name={name}"),
+        ])
         .status();
 }
 
@@ -72,7 +78,9 @@ impl PulseOutput {
     /// Prepara o dispositivo. Cria o null-sink se necessario.
     pub fn new(name: &str, description: &str) -> Result<Self> {
         ensure_null_sink(name, description)?;
-        Ok(PulseOutput { name: name.to_string() })
+        Ok(PulseOutput {
+            name: name.to_string(),
+        })
     }
 
     pub fn device_name(&self) -> &str {
@@ -82,8 +90,16 @@ impl PulseOutput {
     /// Roda o laco de audio ate ser interrompido.
     ///
     /// `should_run` e consultado a cada ciclo para permitir shutdown limpo.
-    pub fn run(&self, shared: Shared, should_run: Arc<dyn Fn() -> bool + Send + Sync>) -> Result<()> {
-        let spec = Spec { format: Format::S16le, channels: 2, rate: 48_000 };
+    pub fn run(
+        &self,
+        shared: Shared,
+        should_run: Arc<dyn Fn() -> bool + Send + Sync>,
+    ) -> Result<()> {
+        let spec = Spec {
+            format: Format::S16le,
+            channels: 2,
+            rate: 48_000,
+        };
 
         let mut ml = Mainloop::new().ok_or_else(|| anyhow!("falha ao criar mainloop"))?;
         let mut ctx = Context::new(&ml, "soundbar-daemon")
@@ -103,7 +119,9 @@ impl PulseOutput {
             match ctx.get_state() {
                 CtxState::Ready => break,
                 CtxState::Failed | CtxState::Terminated => {
-                    return Err(anyhow!("nao foi possivel conectar ao servidor Pulse/PipeWire"))
+                    return Err(anyhow!(
+                        "nao foi possivel conectar ao servidor Pulse/PipeWire"
+                    ))
                 }
                 _ => {
                     waited += Duration::from_millis(50);
@@ -165,7 +183,7 @@ impl PulseOutput {
             }
 
             let want = stream.writable_size().unwrap_or(frame_bytes * 1024);
-            let frames = (want / frame_bytes).max(1).min(48_000 / 10); // limita a 100ms
+            let frames = (want / frame_bytes).clamp(1, 48_000 / 10); // limita a 100ms
 
             buf.resize(frames * 2, 0);
             {
@@ -180,9 +198,10 @@ impl PulseOutput {
                 std::thread::sleep(Duration::from_millis(20));
             }
 
-
             // Espera aproxime a duracao do buffer, para nao rodar a 100% da CPU.
-            std::thread::sleep(Duration::from_micros((frames as u64 * 1_000_000 / 48_000).max(500)));
+            std::thread::sleep(Duration::from_micros(
+                (frames as u64 * 1_000_000 / 48_000).max(500),
+            ));
         }
 
         let _ = stream.disconnect();

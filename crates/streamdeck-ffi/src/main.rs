@@ -35,7 +35,9 @@ struct Daemon {
 
 impl Daemon {
     fn new() -> Self {
-        Daemon { config_dir: Config::resolve_dir() }
+        Daemon {
+            config_dir: Config::resolve_dir(),
+        }
     }
 
     fn endpoint(&self) -> Endpoint {
@@ -56,7 +58,10 @@ impl Daemon {
     /// para poder parar na segunda tecla.
     async fn play(&self, effect: &str, gain: f32) -> Result<()> {
         self.request(
-            &ClientMessage::Play { effect_id: effect.to_string(), gain: Some(gain) },
+            &ClientMessage::Play {
+                effect_id: effect.to_string(),
+                gain: Some(gain),
+            },
             Duration::from_millis(1500),
         )?;
         Ok(())
@@ -83,14 +88,22 @@ impl Action for StopAll {
     const UUID: &'static str = "com.soundbar.stopall";
     type Settings = NoSettings;
 
-    async fn key_down(&self, _instance: &Instance, _settings: &Self::Settings) -> OpenActionResult<()> {
+    async fn key_down(
+        &self,
+        _instance: &Instance,
+        _settings: &Self::Settings,
+    ) -> OpenActionResult<()> {
         if let Err(e) = Daemon::new().stop_all().await {
             log::warn!("falha ao parar tudo: {e}");
         }
         Ok(())
     }
 
-    async fn dial_down(&self, instance: &Instance, settings: &Self::Settings) -> OpenActionResult<()> {
+    async fn dial_down(
+        &self,
+        instance: &Instance,
+        settings: &Self::Settings,
+    ) -> OpenActionResult<()> {
         self.key_down(instance, settings).await
     }
 }
@@ -103,7 +116,11 @@ impl Action for PlayEffect {
     const UUID: &'static str = "com.soundbar.play";
     type Settings = PlaySettings;
 
-    async fn key_down(&self, instance: &Instance, settings: &Self::Settings) -> OpenActionResult<()> {
+    async fn key_down(
+        &self,
+        instance: &Instance,
+        settings: &Self::Settings,
+    ) -> OpenActionResult<()> {
         if settings.effect.trim().is_empty() {
             log::warn!("tecla sem efeito configurado");
             return Ok(());
@@ -125,24 +142,43 @@ impl Action for PlayEffect {
         Ok(())
     }
 
-    async fn key_up(&self, instance: &Instance, _settings: &Self::Settings) -> OpenActionResult<()> {
+    async fn key_up(
+        &self,
+        instance: &Instance,
+        _settings: &Self::Settings,
+    ) -> OpenActionResult<()> {
         // Volta ao estado ocioso.
         instance.set_state(0).await.ok();
         Ok(())
     }
 
-    async fn dial_down(&self, instance: &Instance, settings: &Self::Settings) -> OpenActionResult<()> {
+    async fn dial_down(
+        &self,
+        instance: &Instance,
+        settings: &Self::Settings,
+    ) -> OpenActionResult<()> {
         self.key_down(instance, settings).await
     }
 
-    async fn dial_up(&self, instance: &Instance, settings: &Self::Settings) -> OpenActionResult<()> {
+    async fn dial_up(
+        &self,
+        instance: &Instance,
+        settings: &Self::Settings,
+    ) -> OpenActionResult<()> {
         self.key_up(instance, settings).await
     }
 
-    async fn will_appear(&self, instance: &Instance, _settings: &Self::Settings) -> OpenActionResult<()> {
+    async fn will_appear(
+        &self,
+        instance: &Instance,
+        _settings: &Self::Settings,
+    ) -> OpenActionResult<()> {
         // Envia a lista de efeitos para o Property Inspector montar o select.
         if let Some(list) = fetch_effects() {
-            instance.send_to_property_inspector(serde_json::json!({ "effects": list })).await.ok();
+            instance
+                .send_to_property_inspector(serde_json::json!({ "effects": list }))
+                .await
+                .ok();
         }
         Ok(())
     }
@@ -158,7 +194,9 @@ fn fetch_effects() -> Option<Vec<soundbar_core::protocol::EffectInfo>> {
     }
     // fallback: le do disco
     let cfg = Config::load_dir(&d.config_dir).ok()?;
-    let dir = cfg.sounds_dir.unwrap_or_else(|| d.config_dir.join("sounds"));
+    let dir = cfg
+        .sounds_dir
+        .unwrap_or_else(|| d.config_dir.join("sounds"));
     let lib = soundbar_core::sfx::load_dir(&dir).ok()?;
     Some(soundbar_core::sfx::infos(&lib))
 }

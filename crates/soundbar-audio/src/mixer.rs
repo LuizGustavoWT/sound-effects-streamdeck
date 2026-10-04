@@ -45,7 +45,12 @@ impl Default for Mixer {
 
 impl Mixer {
     pub fn new(master_gain: f32, max_polyphony: usize) -> Self {
-        Mixer { voices: BTreeMap::new(), next_id: 1, master_gain, max_polyphony }
+        Mixer {
+            voices: BTreeMap::new(),
+            next_id: 1,
+            master_gain,
+            max_polyphony,
+        }
     }
 
     pub fn set_master_gain(&mut self, g: f32) {
@@ -130,14 +135,10 @@ impl Mixer {
     ///
     /// `lookup` resolve um effect_id para o som, para que o mixer nao precise
     /// conhecer a biblioteca inteira.
-    pub fn mix_into(
-        &mut self,
-        out: &mut [i16],
-        lookup: &dyn Fn(&str) -> Option<Arc<Sound>>,
-    ) {
+    pub fn mix_into(&mut self, out: &mut [i16], lookup: &dyn Fn(&str) -> Option<Arc<Sound>>) {
         out.iter_mut().for_each(|s| *s = 0);
         let frames = out.len() / 2;
-        let mg = self.master_gain as f32;
+        let mg = self.master_gain;
 
         for frame in 0..frames {
             let mut acc_l = 0f32;
@@ -170,8 +171,8 @@ impl Mixer {
                     // Rampa linear do nivel atual ate `to`
                     // ao longo dos samples do fade.
                     let start = voice.fade_start.unwrap_or(0);
-                    let pos = (voice.cursor.saturating_sub(start)) as f32
-                        / voice.fade_len.max(1) as f32;
+                    let pos =
+                        (voice.cursor.saturating_sub(start)) as f32 / voice.fade_len.max(1) as f32;
                     env *= 1.0 - (1.0 - to) * pos.min(1.0);
                 }
 
@@ -200,13 +201,21 @@ fn clamp_i16(v: f32) -> i16 {
     v.clamp(-32768.0, 32767.0) as i16
 }
 
-
 /// Comandos enviados ao mixer via canal.
 #[derive(Debug)]
 pub enum MixerCommand {
-    Play { sound: std::sync::Arc<soundbar_core::sfx::Sound>, gain: f32, retrigger: bool, stop_at: Option<u64> },
+    Play {
+        sound: std::sync::Arc<soundbar_core::sfx::Sound>,
+        gain: f32,
+        retrigger: bool,
+        stop_at: Option<u64>,
+    },
     Stop(u64),
     StopAll,
     SetMasterGain(f32),
-    FadeOut { id: u64, samples: usize, to: f32 },
+    FadeOut {
+        id: u64,
+        samples: usize,
+        to: f32,
+    },
 }

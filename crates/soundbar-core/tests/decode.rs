@@ -42,7 +42,11 @@ fn decodes_pcm_wav_stereo() {
     let sound = sfx::load(&path).unwrap();
     assert_eq!(sound.sample_rate, 48_000);
     assert_eq!(sound.samples.len() as u64, 48_000 * 25 / 100 * 2);
-    assert!((240..=260).contains(&sound.duration_ms), "duracao foi {}", sound.duration_ms);
+    assert!(
+        (240..=260).contains(&sound.duration_ms),
+        "duracao foi {}",
+        sound.duration_ms
+    );
     assert_eq!(sound.name, "airhorn");
 }
 
@@ -57,12 +61,22 @@ fn discovers_and_loads_a_library() {
     std::fs::write(sounds.join("ignorado.txt"), "nao sou audio").unwrap();
 
     let found = sfx::discover(&sounds).unwrap();
-    assert_eq!(found.len(), 2, "deve ignorar .txt e achar os 2 wavs em subdiretorio");
+    assert_eq!(
+        found.len(),
+        2,
+        "deve ignorar .txt e achar os 2 wavs em subdiretorio"
+    );
 
     let lib = sfx::load_dir(&sounds).unwrap();
     assert_eq!(lib.len(), 2);
-    assert!(lib.contains_key("a"), "id deve ser relativo ao diretorio de sons");
-    assert!(lib.contains_key("memes/b"), "id aninhado deve preservar o caminho");
+    assert!(
+        lib.contains_key("a"),
+        "id deve ser relativo ao diretorio de sons"
+    );
+    assert!(
+        lib.contains_key("memes/b"),
+        "id aninhado deve preservar o caminho"
+    );
 
     let infos = sfx::infos(&lib);
     assert_eq!(infos.len(), 2);

@@ -141,7 +141,10 @@ fn fade_out_decays_to_silence() {
     let head = rms(&buf[..64]);
     let last = rms(&buf[buf.len().saturating_sub(32)..]);
     assert!(head > 8_500.0, "inicio em nivel cheio, rms={head}");
-    assert!(last < head * 0.05, "final deve estar em silencio, head={head} last={last}");
+    assert!(
+        last < head * 0.05,
+        "final deve estar em silencio, head={head} last={last}"
+    );
 }
 
 #[test]

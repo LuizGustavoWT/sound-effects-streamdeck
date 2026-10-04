@@ -80,12 +80,20 @@ impl KeyPosition {
 impl Layout {
     /// Cria um layout de 5x15 (Stream Deck original / Mini / MK.2).
     pub fn standard_15() -> Self {
-        Layout { rows: 5, columns: 15, ..Default::default() }
+        Layout {
+            rows: 5,
+            columns: 15,
+            ..Default::default()
+        }
     }
 
     /// Cria um layout de 8 colunas (Stream Deck XL).
     pub fn xl() -> Self {
-        Layout { rows: 4, columns: 8, ..Default::default() }
+        Layout {
+            rows: 4,
+            columns: 8,
+            ..Default::default()
+        }
     }
 
     /// Define um slot.

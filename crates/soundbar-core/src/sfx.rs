@@ -37,8 +37,8 @@ pub fn discover(dir: &Path) -> Result<Vec<PathBuf>> {
     }
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
-        for entry in std::fs::read_dir(&d)
-            .with_context(|| format!("lendo diretorio {}", d.display()))?
+        for entry in
+            std::fs::read_dir(&d).with_context(|| format!("lendo diretorio {}", d.display()))?
         {
             let entry = entry?;
             let path = entry.path();
@@ -77,13 +77,17 @@ pub fn load(path: &Path) -> Result<Sound> {
     use symphonia::core::meta::MetadataOptions;
     use symphonia::core::probe::Hint;
 
-    let file = std::fs::File::open(path)
-        .with_context(|| format!("abrindo {}", path.display()))?;
+    let file = std::fs::File::open(path).with_context(|| format!("abrindo {}", path.display()))?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
 
     let hint = Hint::new();
     let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .format(
+            &hint,
+            mss,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
         .with_context(|| format!("sondando formato de {}", path.display()))?;
 
     let mut format = probed.format;

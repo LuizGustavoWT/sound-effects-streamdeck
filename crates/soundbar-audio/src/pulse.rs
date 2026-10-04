@@ -11,7 +11,7 @@ use pulse::context::{Context, FlagSet as CtxFlags, State as CtxState};
 use pulse::mainloop::standard::{IterateResult, Mainloop};
 use pulse::sample::{Format, Spec};
 use pulse::stream::{FlagSet as StreamFlags, SeekMode, State as StreamState, Stream};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use crate::mixer::Mixer;
@@ -66,7 +66,9 @@ pub fn remove_null_sink(name: &str) {
 /// Estado compartilhado com a thread de audio.
 pub struct Shared {
     pub mixer: Arc<Mutex<Mixer>>,
-    pub library: Arc<SoundLibrary>,
+    /// Leitura a cada buffer de audio, escrita apenas no reload.
+    /// Por isso RwLock e nao Mutex: nao trava o loop de audio.
+    pub library: Arc<RwLock<SoundLibrary>>,
 }
 
 /// Backend de saida via PulseAudio.
@@ -187,7 +189,7 @@ impl PulseOutput {
 
             buf.resize(frames * 2, 0);
             {
-                let lib = shared.library.clone();
+                let lib = shared.library.read().unwrap_or_else(|e| e.into_inner()).clone();
                 let mut mx = shared.mixer.lock().unwrap_or_else(|e| e.into_inner());
                 mx.mix_into(&mut buf, &move |id: &str| lib.get(id).cloned());
             }

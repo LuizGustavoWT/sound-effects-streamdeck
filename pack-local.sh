@@ -64,6 +64,11 @@ install_into() {
 
     cp -r src/assets/. "$DEST/assets/"
     cp -r src/propertyInspector/. "$DEST/propertyInspector/"
+    # Script do dialogo nativo de escolha de arquivo.
+    if [ -d scripts ]; then
+        mkdir -p "$DEST/scripts"
+        cp -r scripts/. "$DEST/scripts/"
+    fi
 }
 
 FOUND=0

@@ -52,6 +52,15 @@ tecla e configure o efeito no **Property Inspector**.
 
 ### 3. Adicionar seus efeitos
 
+Você tem duas opções:
+
+**Opção A: Importar pelo Property Inspector (mais fácil)**
+1. No OpenDeck, arraste a ação **Play Effect** para uma tecla.
+2. Clique em **Escolher arquivo...** no Property Inspector.
+3. Selecione o arquivo de áudio (mp3, wav, ogg, flac) no seu PC.
+4. O arquivo é copiado automaticamente para a pasta de sons e fica disponível imediatamente.
+
+**Opção B: Copiar manualmente**
 Copie seus arquivos para a pasta de sons:
 
 ```bash
@@ -59,25 +68,36 @@ cp ~/Downloads/*.wav ~/.config/soundbar-streamdeck/sounds/
 ```
 
 Formatos aceitos: `.wav` `.mp3` `.flac` `.ogg` `.oga` `.opus` `.aiff` `.m4a` `.aac` `.wma`
+
 Subpastas viram categorias (ex.: `sounds/memes/rickroll.wav` → id `memes/rickroll`).
+
+Depois de copiar manualmente, reinicie o daemon: `systemctl --user restart soundbar`.
 
 ### 4. Configurar no OBS
 
-Como o objetivo é **levar os efeitos para a live/gravação**:
+O plugin cria um dispositivo de áudio virtual chamado **StreamDeckSoundBar**. Para levar os efeitos para a live/gravação:
 
-1. No OBS, adicione a fonte **Captura de Saída de Áudio** (ou *Desktop Audio*).
-2. Se ela listar vários dispositivos, adicione uma fonte por dispositivo e
-   desmarque as que você não quer na live.
-3. Confirme que `StreamDeckSoundBar` está na lista e **marcado**.
-4. Se a fonte já existir, troque o dispositivo: Properties → dispositivo →
-   `StreamDeckSoundBar`.
+**Passo a passo no OBS:**
 
-Se você também quiser **ouvir** os efeitos nos seus fones enquanto transmite,
-ative o monitor do dispositivo virtual no seu mixer de áudio
-(PipeWire/WirePlumber: *Configurações → Áudio → Dispositivos de Saída →* cliente
-`StreamDeckSoundBar`; no Windows, Marque o dispositivo como *Escutar* nas
-propriedades; no macOS, use o **Soundflower**/**BlackHole** ou o mixer do
-sistema). Sem monitor, o áudio vai só para a live — que é o padrão.
+1. Abra o OBS e vá em **Fontes** (na parte inferior).
+2. Clique no **+** e escolha **Captura de Saída de Áudio** (ou *Audio Output Capture*).
+3. Dê um nome (ex: "Efeitos Stream Deck") e clique em OK.
+4. Na janela de propriedades, em **Dispositivo**, selecione **StreamDeckSoundBar**.
+5. Clique em OK. Pronto! Os efeitos agora entram na sua live.
+
+**Para ouvir os efeitos nos seus fones enquanto transmite:**
+
+Por padrão, o áudio vai só para a live. Se você quiser ouvir também:
+
+- **Linux (PipeWire/WirePlumber):** Abra as configurações de áudio do sistema → Dispositivos de Saída → procure por `StreamDeckSoundBar` → ative o monitor ou redirecione para seus fones.
+- **Windows:** Clique com o botão direito no ícone de som → Sons → Gravação → procure por `StreamDeckSoundBar` → Propriedades → Escutar → marque "Escutar este dispositivo" e escolha seus fones.
+- **macOS:** Use o **BlackHole** ou **Soundflower** para rotear o áudio, ou configure no mixer do sistema.
+
+**Verificando se está funcionando:**
+
+- Aperte uma tecla com efeito configurado no Stream Deck.
+- No OBS, a barra de volume da fonte "Efeitos Stream Deck" deve subir.
+- Se não subir, verifique se o daemon está rodando: `systemctl --user status soundbar`
 
 ### 5. Testar sem o Stream Deck
 

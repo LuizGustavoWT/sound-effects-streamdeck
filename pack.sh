@@ -53,6 +53,10 @@ cp -r src/assets "$TMP_DIR/$PLUGIN_FOLDER/"
 if [ -d "src/propertyInspector" ]; then
     cp -r src/propertyInspector "$TMP_DIR/$PLUGIN_FOLDER/"
 fi
+# Script do dialogo nativo de escolha de arquivo.
+if [ -d "scripts" ]; then
+    cp -r scripts "$TMP_DIR/$PLUGIN_FOLDER/"
+fi
 # ---------- Create zip ----------
 rm -f "$ZIP_NAME"
 cd "$TMP_DIR"

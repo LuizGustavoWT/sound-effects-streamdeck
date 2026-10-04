@@ -37,6 +37,11 @@ pub enum ClientMessage {
     PushLayout { layout: crate::layout::Layout },
     /// Resposta a um pedido de status.
     Ping,
+    /// Recarrega a biblioteca de efeitos do disco.
+    ///
+    /// Necessario depois de importar um arquivo novo, porque o daemon le os
+    /// sons uma unica vez no startup.
+    ReloadEffects,
 }
 
 impl ClientMessage {

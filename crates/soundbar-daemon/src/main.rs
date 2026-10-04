@@ -17,13 +17,15 @@ use soundbar_core::protocol::{ClientMessage, DaemonMessage};
 use soundbar_core::sfx::{self, SoundLibrary};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 
 /// Estado compartilhado entre o loop de audio e as conexoes IPC.
 struct AppState {
     mixer: Arc<Mutex<Mixer>>,
-    library: Arc<SoundLibrary>,
+    library: Arc<RwLock<SoundLibrary>>,
+    /// Pasta de onde os sons sao lidos (reload usa isto).
+    sounds_dir: PathBuf,
     started: Instant,
 }
 
@@ -78,7 +80,7 @@ fn run(args: &[String]) -> Result<()> {
     eprintln!("[soundbar] configuracao: {}", config_dir.display());
     eprintln!("[soundbar] sons: {}", sounds_dir.display());
 
-    let library = Arc::new(load_library(&sounds_dir)?);
+    let library = load_library(&sounds_dir)?;
     if library.is_empty() {
         eprintln!(
             "[soundbar] AVISO: nenhum efeito encontrado em {}. \
@@ -94,7 +96,8 @@ fn run(args: &[String]) -> Result<()> {
             cfg.audio.master_gain,
             cfg.audio.max_polyphony,
         ))),
-        library,
+        library: Arc::new(RwLock::new(library)),
+        sounds_dir: sounds_dir.clone(),
         started: Instant::now(),
     });
 
@@ -213,11 +216,31 @@ fn dispatch(msg: ClientMessage, state: &Arc<AppState>) -> Option<DaemonMessage> 
         }
 
         ClientMessage::ListEffects => Some(DaemonMessage::Effects {
-            effects: sfx::infos(&state.library),
+            effects: sfx::infos(&state.library.read().unwrap_or_else(|e| e.into_inner())),
         }),
 
+        ClientMessage::ReloadEffects => {
+            match load_library(&state.sounds_dir) {
+                Ok(new_lib) => {
+                    let count = new_lib.len();
+                    *state.library.write().unwrap_or_else(|e| e.into_inner()) = new_lib;
+                    eprintln!("[soundbar] {count} efeitos recarregados de {}", state.sounds_dir.display());
+                    Some(DaemonMessage::Effects {
+                        effects: sfx::infos(&state.library.read().unwrap_or_else(|e| e.into_inner())),
+                    })
+                }
+                Err(e) => Some(DaemonMessage::Error { message: format!("falha no reload: {e:#}") }),
+            }
+        }
+
         ClientMessage::Play { effect_id, gain } => {
-            let Some(sound) = state.library.get(&effect_id).cloned() else {
+            let sound = state
+                .library
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(&effect_id)
+                .cloned();
+            let Some(sound) = sound else {
                 return Some(DaemonMessage::Error {
                     message: format!("efeito desconhecido: {effect_id}"),
                 });

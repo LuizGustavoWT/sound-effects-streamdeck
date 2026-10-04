@@ -2,3 +2,4 @@
 *.sdPlugin/
 .DS_Store
 *.raw
+*.zip

@@ -188,3 +188,55 @@ fn stop_at_cursor_truncates_voice() {
     m.mix_into(&mut out, &lookup);
     assert_eq!(m.active_voices(), 0, "deve parar no cursor configurado");
 }
+
+// --- Retrigger: clicar de novo corta o anterior e comeca o novo ---
+
+#[test]
+fn stop_effect_corta_todas_as_vozes_desse_efeito() {
+    let a = dc("a", 48_000, 1_000);
+    let mut m = Mixer::new(1.0, 16);
+    m.play(a.clone(), 1.0, true, None).unwrap();
+    m.play(a.clone(), 1.0, true, None).unwrap();
+    m.play(a.clone(), 1.0, true, None).unwrap();
+    assert_eq!(m.active_voices(), 3);
+    assert_eq!(m.stop_effect("a"), 3);
+    assert_eq!(m.active_voices(), 0);
+}
+
+#[test]
+fn stop_effect_so_toca_o_efeito_indicado() {
+    let a = dc("a", 48_000, 1_000);
+    let b = dc("b", 48_000, 1_000);
+    let mut m = Mixer::new(1.0, 16);
+    m.play(a.clone(), 1.0, true, None).unwrap();
+    m.play(b.clone(), 1.0, true, None).unwrap();
+    assert_eq!(m.stop_effect("a"), 1);
+    assert_eq!(m.active_voices(), 1, "b deve continuar tocando");
+}
+
+#[test]
+fn retrigger_comeca_do_zero_sem_empilhar() {
+    let a = dc("a", 48_000, 1_000);
+    let mut m = Mixer::new(1.0, 16);
+    m.play(a.clone(), 1.0, true, None).unwrap();
+
+    // Consome parte do efeito.
+    let mut out = vec![0i16; 24_000 * 2];
+    m.mix_into(&mut out, &lib(vec![a.clone()]));
+
+    // Retrigger: corta e toca de novo do inicio.
+    m.stop_effect("a");
+    m.play(a.clone(), 1.0, true, None).unwrap();
+    assert_eq!(m.active_voices(), 1, "apenas a nova voz");
+
+    let mut out2 = vec![0i16; 4096 * 2];
+    m.mix_into(&mut out2, &lib(vec![a.clone()]));
+    assert_eq!(out2[0], 1000, "a nova voz deve comecar do inicio");
+}
+
+#[test]
+fn stop_effect_inexistente_nao_falha() {
+    let mut m = Mixer::new(1.0, 16);
+    assert_eq!(m.stop_effect("nao_existe"), 0);
+    assert_eq!(m.active_voices(), 0);
+}

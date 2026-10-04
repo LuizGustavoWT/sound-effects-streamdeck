@@ -185,7 +185,10 @@ impl PulseOutput {
 
         // Laco de escrita. Sem callback: controlamos o ritmo manualmente para
         // poder checar `should_run` e evitar borrow de `stream` dentro de closure.
-        let frame_bytes = 4usize; // 2 canais * i16
+        // 20 ms por lote: granularidade fina o bastante para nao picotar,
+        // grande o bastante para o Pulse nao engasgar.
+        const SAMPLE_RATE: u32 = 48_000;
+        const FRAMES_PER_BATCH: usize = SAMPLE_RATE as usize / 50;
         let mut buf: Vec<i16> = Vec::new();
 
         while should_run() {
@@ -198,8 +201,11 @@ impl PulseOutput {
                 }
             }
 
-            let want = stream.writable_size().unwrap_or(frame_bytes * 1024);
-            let frames = (want / frame_bytes).clamp(1, 48_000 / 10); // limita a 100ms
+            // `writable_size()` devolve 0 sempre neste sink (e um null-sink
+            // sem relogio de consumo), entao o `unwrap_or` nunca era usado e o
+            // codigo caia no minimo de 1 frame: 4 bytes por iteracao. Isso
+            // produz o audio picotado. Aqui o tamanho vem de um timer fixo.
+            let frames = FRAMES_PER_BATCH;
 
             buf.resize(frames * 2, 0);
             {
@@ -213,14 +219,16 @@ impl PulseOutput {
             }
 
             let bytes: Vec<u8> = buf.iter().flat_map(|s| s.to_le_bytes()).collect();
+
             if let Err(e) = stream.write_copy(&bytes, 0, SeekMode::Relative) {
                 eprintln!("[soundbar] escrita falhou: {e:?}");
                 std::thread::sleep(Duration::from_millis(20));
+                continue;
             }
 
-            // Espera aproxime a duracao do buffer, para nao rodar a 100% da CPU.
-            std::thread::sleep(Duration::from_micros(
-                (frames as u64 * 1_000_000 / 48_000).max(500),
+            // Espera a duracao real do lote: e o que mantem o ritmo em 48 kHz.
+            std::thread::sleep(Duration::from_nanos(
+                FRAMES_PER_BATCH as u64 * 1_000_000_000 / SAMPLE_RATE as u64,
             ));
         }
 

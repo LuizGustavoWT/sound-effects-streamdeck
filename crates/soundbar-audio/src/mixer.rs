@@ -74,6 +74,11 @@ impl Mixer {
         retrigger: bool,
         stop_at: Option<u64>,
     ) -> Option<u64> {
+        // Nao remove a voz anterior aqui: `play` e usado tanto para o
+        // retrigger (mesmo efeito) quanto para sobreposicao (efeitos
+        // diferentes). Quem decide o corte e o daemon, via `stop_effect`.
+        let _ = retrigger;
+
         // Respeita polyphony: se ja esta no limite e nao ha retrigger, descarta
         // a voz mais antiga para dar lugar a nova.
         if self.max_polyphony > 0 && self.active_voices() >= self.max_polyphony {
@@ -119,6 +124,24 @@ impl Mixer {
         } else {
             false
         }
+    }
+
+    /// Corta todas as vozes de um efeito.
+    ///
+    /// Chamado pelo daemon antes de tocar o mesmo efeito de novo, para o
+    /// clique nao empilhar audio nem ficar abafado pelo que ainda tocava.
+    pub fn stop_effect(&mut self, effect_id: &str) -> usize {
+        let ids: Vec<u64> = self
+            .voices
+            .iter()
+            .filter(|(_, v)| v.effect_id == effect_id)
+            .map(|(id, _)| *id)
+            .collect();
+        let n = ids.len();
+        for id in ids {
+            self.voices.remove(&id);
+        }
+        n
     }
 
     /// Para uma voz imediatamente.

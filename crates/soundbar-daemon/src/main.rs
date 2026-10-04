@@ -251,6 +251,9 @@ fn dispatch(msg: ClientMessage, state: &Arc<AppState>) -> Option<DaemonMessage> 
             let g = gain.unwrap_or(1.0);
             let id = {
                 let mut mx = state.mixer.lock().unwrap_or_else(|e| e.into_inner());
+                // Retrigger: apertar a mesma tecla de novo corta o que ainda
+                // tocava e comeca o efeito do inicio, sem empilhar audio.
+                mx.stop_effect(&effect_id);
                 mx.play(sound, g, true, None)
             };
             match id {

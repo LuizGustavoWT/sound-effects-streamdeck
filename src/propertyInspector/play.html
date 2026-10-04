@@ -82,12 +82,18 @@
 
 				try {
 					const data = await readAsDataURL(file);
-					sendToPlugin(
-						Object.assign(currentSettings(), {
-							importData: data,
-							importName: file.name,
+
+					// Payload separado, so com o arquivo. Misturar no
+					// setSettings faria o OpenDeck gravar o base64 inteiro no
+					// perfil, a cada tecla.
+					ws.send(
+						JSON.stringify({
+							event: "setSettings",
+							context: ctx,
+							payload: { importData: data, importName: file.name },
 						})
 					);
+
 					showStatus("Processando " + file.name + "...", false);
 				} catch (err) {
 					showStatus("Erro: " + err.message, true);
@@ -118,7 +124,8 @@
 						if (p.effects) {
 							applyEffects(p.effects, p.selected);
 							if (p.selected) {
-								// O plugin ja atualizou as settings; reflete aqui.
+								// Seleciona o efeito importado e grava apenas os
+								// campos limpos (sem base64).
 								document.getElementById("effect").value = p.selected;
 								update();
 								showStatus("Importado: " + p.selected, false);

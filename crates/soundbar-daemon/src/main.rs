@@ -9,10 +9,9 @@
 use anyhow::{anyhow, Context, Result};
 use soundbar_audio::mixer::Mixer;
 use soundbar_core::config::Config;
-use soundbar_core::protocol::{write_message, ClientMessage, DaemonMessage};
+use soundbar_core::ipc::{Conn, Endpoint, Listener};
+use soundbar_core::protocol::{ClientMessage, DaemonMessage};
 use soundbar_core::sfx::{self, SoundLibrary};
-use std::io::{BufReader, BufWriter};
-use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -93,12 +92,10 @@ fn run(args: &[String]) -> Result<()> {
         started: Instant::now(),
     });
 
-    // Socket IPC
-    let sock_path = config_dir.join("soundbar.sock");
-    let _ = std::fs::remove_file(&sock_path);
-    let listener = UnixListener::bind(&sock_path)
-        .with_context(|| format!("nao foi possivel criar socket em {}", sock_path.display()))?;
-    eprintln!("[soundbar] IPC em {}", sock_path.display());
+    // IPC multiplataforma: socket Unix no Linux/macOS, loopback TCP no Windows.
+    let endpoint = Endpoint::from_config_dir(&config_dir);
+    let listener = Listener::bind(&endpoint, &config_dir)?;
+    eprintln!("[soundbar] IPC em {}", endpoint.display());
 
     let running = Arc::new(AtomicBool::new(true));
 
@@ -124,20 +121,20 @@ fn run(args: &[String]) -> Result<()> {
 
     // Loop de IPC
     eprintln!("[soundbar] pronto. Ctrl-C para sair.");
-    for stream in listener.incoming() {
-        if !running.load(Ordering::Relaxed) {
-            break;
-        }
-        match stream {
-            Ok(s) => {
+    while running.load(Ordering::Relaxed) {
+        match listener.accept() {
+            Ok(conn) => {
                 let st = state.clone();
                 std::thread::spawn(move || {
-                    if let Err(e) = handle_client(s, st) {
+                    if let Err(e) = handle_client(conn, st) {
                         eprintln!("[soundbar] cliente desconectou: {e:#}");
                     }
                 });
             }
-            Err(e) => eprintln!("[soundbar] erro aceitando conexao: {e}"),
+            Err(e) => {
+                eprintln!("[soundbar] erro aceitando conexao: {e}");
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
         }
     }
     Ok(())
@@ -151,28 +148,26 @@ fn load_library(dir: &std::path::Path) -> Result<SoundLibrary> {
     Ok(lib)
 }
 
-fn handle_client(stream: UnixStream, state: Arc<AppState>) -> Result<()> {
-    let mut reader = BufReader::new(stream.try_clone()?);
-    let mut writer = BufWriter::new(stream);
-    let mut line = String::new();
-
+fn handle_client(mut conn: Conn, state: Arc<AppState>) -> Result<()> {
     loop {
-        line.clear();
-        let n = std::io::BufRead::read_line(&mut reader, &mut line)?;
-        if n == 0 {
+        let Some(line) = conn.read_line()? else {
             break; // cliente fechou
+        };
+        if line.is_empty() {
+            continue;
         }
-        let msg: ClientMessage = match serde_json::from_str(line.trim()) {
+        let msg: ClientMessage = match serde_json::from_str(&line) {
             Ok(m) => m,
             Err(e) => {
-                write_message(&mut writer, &DaemonMessage::Error { message: format!("JSON invalido: {e}") })?;
+                let err = DaemonMessage::Error { message: format!("JSON invalido: {e}") };
+                conn.write_line(&serde_json::to_string(&err)?)?;
                 continue;
             }
         };
 
         let reply = dispatch(msg, &state);
         if let Some(r) = reply {
-            write_message(&mut writer, &r)?;
+            conn.write_line(&serde_json::to_string(&r)?)?;
         }
     }
     Ok(())

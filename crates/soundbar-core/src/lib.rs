@@ -6,6 +6,7 @@
 //! testar toda a logica em qualquer plataforma.
 
 pub mod config;
+pub mod ipc;
 pub mod layout;
 pub mod protocol;
 pub mod sfx;

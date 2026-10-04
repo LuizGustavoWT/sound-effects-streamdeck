@@ -3,12 +3,12 @@
 //! Conversa com o daemon pelo mesmo socket IPC do plugin do Stream Deck,
 //! para que voce possa testar efeitos sem o hardware na mesa.
 
+use std::path::PathBuf;
+
 use anyhow::{anyhow, Context, Result};
 use soundbar_core::config::Config;
+use soundbar_core::ipc::{Conn, Endpoint};
 use soundbar_core::protocol::{ClientMessage, DaemonMessage};
-use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
 
 const HELP: &str = "soundbar - controle do Sound Effects Stream Deck
 
@@ -84,36 +84,15 @@ fn real_main() -> Result<()> {
     }
 }
 
-fn socket_path(config_dir: &std::path::Path) -> PathBuf {
-    config_dir.join("soundbar.sock")
-}
-
-fn connect(config_dir: &std::path::Path) -> Result<UnixStream> {
-    let p = socket_path(config_dir);
-    UnixStream::connect(&p).map_err(|e| {
-        anyhow!(
-            "nao consegui conectar no daemon em {}: {e}\n\
-             O daemon esta rodando? Tente: systemctl --user status soundbar",
-            p.display()
-        )
-    })
-}
-
-/// Envia uma mensagem e imprime a resposta (se houver).
+/// Envia uma mensagem e devolve a resposta (se houver).
 fn send(config_dir: &std::path::Path, msg: &ClientMessage) -> Result<Option<DaemonMessage>> {
-    let mut s = connect(config_dir)?;
-    let payload = serde_json::to_string(msg)?;
-    s.write_all(payload.as_bytes())?;
-    s.write_all(b"\n")?;
-    s.flush()?;
-
-    let mut reader = BufReader::new(&s);
-    let mut line = String::new();
-    if reader.read_line(&mut line)? == 0 {
+    let endpoint = Endpoint::from_config_dir(config_dir);
+    let mut conn = Conn::connect(&endpoint)?;
+    conn.write_line(&serde_json::to_string(msg)?)?;
+    let Some(line) = conn.read_line()? else {
         return Ok(None);
-    }
-    let reply = serde_json::from_str::<DaemonMessage>(line.trim())?;
-    Ok(Some(reply))
+    };
+    Ok(Some(serde_json::from_str::<DaemonMessage>(&line)?))
 }
 
 fn cmd_list(config_dir: &std::path::Path) -> Result<()> {
@@ -205,7 +184,7 @@ fn cmd_status(config_dir: &std::path::Path) -> Result<()> {
 
 fn cmd_config(config_dir: &std::path::Path) -> Result<()> {
     println!("config:  {}", config_dir.display());
-    println!("socket:  {}", socket_path(config_dir).display());
+    println!("socket:  {}", Endpoint::from_config_dir(config_dir).display());
     match Config::load_dir(config_dir) {
         Ok(cfg) => println!("sons:    {}", cfg.sounds_dir.clone().unwrap_or_default().display()),
         Err(e) => println!("sons:    (erro ao ler config: {e})"),

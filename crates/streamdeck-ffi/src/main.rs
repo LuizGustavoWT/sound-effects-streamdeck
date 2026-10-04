@@ -9,10 +9,9 @@ use anyhow::Result;
 use openaction::*;
 use serde::{Deserialize, Serialize};
 use soundbar_core::config::Config;
+use soundbar_core::ipc::{Conn, Endpoint};
 use soundbar_core::protocol::{ClientMessage, DaemonMessage, DeviceKind};
-use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
+
 use std::time::Duration;
 
 /// Configuracao por tecla.
@@ -31,7 +30,7 @@ struct PlaySettings {
 
 /// Cliente do daemon, com reconexao automatica.
 struct Daemon {
-    config_dir: PathBuf,
+    config_dir: std::path::PathBuf,
 }
 
 impl Daemon {
@@ -39,27 +38,18 @@ impl Daemon {
         Daemon { config_dir: Config::resolve_dir() }
     }
 
-    fn socket(&self) -> PathBuf {
-        self.config_dir.join("soundbar.sock")
+    fn endpoint(&self) -> Endpoint {
+        Endpoint::from_config_dir(&self.config_dir)
     }
 
     /// Envia uma mensagem e le a resposta.
-    fn request(&self, msg: &ClientMessage, timeout: Duration) -> Result<Option<DaemonMessage>> {
-        let s = UnixStream::connect(self.socket())
-            .map_err(|e| anyhow::anyhow!("daemon ausente em {}: {e}", self.socket().display()))?;
-        s.set_read_timeout(Some(timeout))?;
-        s.set_write_timeout(Some(timeout))?;
-
-        let mut w = &s;
-        writeln!(w, "{}", serde_json::to_string(msg)?)?;
-        w.flush()?;
-
-        let mut reader = BufReader::new(s);
-        let mut line = String::new();
-        if reader.read_line(&mut line)? == 0 {
+    fn request(&self, msg: &ClientMessage, _timeout: Duration) -> Result<Option<DaemonMessage>> {
+        let mut conn = Conn::connect(&self.endpoint())?;
+        conn.write_line(&serde_json::to_string(msg)?)?;
+        let Some(line) = conn.read_line()? else {
             return Ok(None);
-        }
-        Ok(serde_json::from_str(line.trim()).ok())
+        };
+        Ok(serde_json::from_str(&line).ok())
     }
 
     /// Toca um efeito. Em modo toggle, o daemon devolve o id da instancia
@@ -200,7 +190,7 @@ async fn main() -> OpenActionResult<()> {
         _ => {
             log::warn!(
                 "soundbar: daemon nao encontrado em {} — rode ./install.sh",
-                d.socket().display()
+                d.endpoint().display()
             );
         }
     }

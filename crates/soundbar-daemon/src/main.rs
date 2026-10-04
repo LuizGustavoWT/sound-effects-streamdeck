@@ -6,7 +6,10 @@
 //!
 //! O plugin nunca fala com o audio direto: ele so conversa com este daemon.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
+// `Context` so e usado no backend de audio Pulse (Linux).
+#[cfg(target_os = "linux")]
+use anyhow::Context as _;
 use soundbar_audio::mixer::Mixer;
 use soundbar_core::config::Config;
 use soundbar_core::ipc::{Conn, Endpoint, Listener};

@@ -1,0 +1,68 @@
+import json, os, shutil
+
+# 1. Reescreve o manifest no formato plano do ulanzi
+manifest = {
+    "Name": "Sound Effects Stream Deck",
+    "Description": "Soundbar de efeitos para live: cada tecla dispara um som no meio da transmissão.",
+    "Author": "LuizGustavoWT",
+    "Version": "0.1.0",
+    "PluginUUID": "com.luizgustavowt.soundeffects",
+    "CodePathLin": "soundbar-plugin-linux",
+    "Icon": "assets/icon",
+    "Category": "Sound Effects",
+    "OS": [{"Platform": "linux"}],
+    "Actions": [
+        {
+            "UUID": "com.luizgustavowt.soundeffects.play",
+            "Name": "Play Effect",
+            "Icon": "assets/play",
+            "Tooltip": "Toca um efeito sonoro na live.",
+            "Controllers": ["Keypad", "Encoder"],
+            "States": [{"Image": "assets/play"}],
+            "PropertyInspectorPath": "propertyInspector/play.html"
+        },
+        {
+            "UUID": "com.luizgustavowt.soundeffects.stopall",
+            "Name": "Stop All",
+            "Icon": "assets/stop",
+            "Tooltip": "Para todos os efeitos em reprodução.",
+            "Controllers": ["Keypad", "Encoder"],
+            "States": [{"Image": "assets/stop"}]
+        }
+    ]
+}
+
+# Salva em plugin/manifest.json (formato plano)
+with open('plugin/manifest.json', 'w') as f:
+    json.dump(manifest, f, indent=2)
+print("manifest.json reescrito no formato plano")
+
+# 2. Move assets para a estrutura plana
+# plugin/assets/ já existe com icons e propertyInspector
+# Precisamos garantir que assets/ tenha icon.png, play.png, stop.png
+# e propertyInspector/ fique na raiz do plugin
+
+# Copia sdpi.css para propertyInspector se não existir
+pi_dir = 'plugin/propertyInspector'
+os.makedirs(pi_dir, exist_ok=True)
+if os.path.exists('plugin/assets/propertyInspector/sdpi.css'):
+    shutil.copy('plugin/assets/propertyInspector/sdpi.css', f'{pi_dir}/sdpi.css')
+if os.path.exists('plugin/assets/propertyInspector/play.html'):
+    shutil.copy('plugin/assets/propertyInspector/play.html', f'{pi_dir}/play.html')
+if os.path.exists('plugin/assets/propertyInspector/none.html'):
+    shutil.copy('plugin/assets/propertyInspector/none.html', f'{pi_dir}/none.html')
+
+# Garante que assets/ tem os ícones com nomes corretos (sem extensão no manifest, mas .png no disco)
+assets_dir = 'plugin/assets'
+os.makedirs(assets_dir, exist_ok=True)
+for name in ['icon', 'play', 'stop']:
+    src = f'{assets_dir}/{name}.png'
+    if not os.path.exists(src):
+        # Usa plugin.png como icon, play.png como play, stop.png como stop
+        mapping = {'icon': 'plugin', 'play': 'play', 'stop': 'stop'}
+        orig = f'{assets_dir}/{mapping[name]}.png'
+        if os.path.exists(orig):
+            shutil.copy(orig, src)
+            print(f"copiado {orig} -> {src}")
+
+print("estrutura plana pronta")

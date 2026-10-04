@@ -132,11 +132,19 @@ Aparecer como microfone é o que esses apps conseguem usar.
 2. No Discord/Slack/Meet, abra as configurações de áudio.
 3. Escolha `SoundEffectsStreamDeckMic` como microfone.
 
-> **Atenção:** escolher esse microfone virtual **substitui** o seu microfone
-> real naquela chamada. Para falar e tocar efeitos ao mesmo tempo, esses apps
-> normalmente deixam você usar **dois** sistemas de captura, ou usar o
-> microfone de verdade e enviar os efeitos por outra via (como uma fonte de
-> áudio virtual no OBS).
+### Falar e tocar efeitos ao mesmo tempo
+
+Escolher esse microfone virtual **substitui** o seu microfone real. Para não
+ficar trocando de dispositivo em cada call, o daemon pode rotear o seu
+microfone de verdade para dentro do sink dos efeitos:
+
+```json
+{ "audio": { "mic_into_sink": "alsa_input.usb-SEU-MICROFONE.analog-stereo" } }
+```
+
+Ache o nome do seu microfone em `pactl list short sources`. Com isso o sink
+passa a receber **voz + efeitos**, e o `StreamDeckSoundBarMic` entrega os dois
+num único dispositivo.
 
 Para desligar a fonte virtual (por exemplo, se preferir usar um driver de
 áudio dedicado), coloque em `config.json`:

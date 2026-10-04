@@ -67,6 +67,44 @@ pub fn ensure_null_sink(name: &str, description: &str) -> Result<()> {
     Ok(())
 }
 
+/// Rota um microfone real para dentro do sink dos efeitos.
+///
+/// Com isso o sink passa a receber **voz + efeitos**, e o microfone virtual
+/// (`ensure_virtual_mic`) entrega os dois juntos. O usuario escolhe um
+/// unico microfone no Discord/Slack/Meet, em vez de ficar trocando de
+/// dispositivo ou de usar um driver dedicado.
+///
+/// `module-loopback` faz a copia; e a unica forma de somar uma entrada de
+/// hardware a um sink virtual.
+pub fn route_mic_into_sink(source: &str, sink: &str) -> Result<()> {
+    // Evita duplicar o loopback a cada restart do daemon.
+    let existing = std::process::Command::new("pactl")
+        .args(["list", "short", "modules"])
+        .output()?;
+    if existing.status.success() {
+        let out = String::from_utf8_lossy(&existing.stdout);
+        if out.contains(&format!("source={source}")) && out.contains(&format!("sink={sink}")) {
+            return Ok(());
+        }
+    }
+
+    let status = std::process::Command::new("pactl")
+        .args([
+            "load-module",
+            "module-loopback",
+            &format!("source={source}"),
+            &format!("sink={sink}"),
+        ])
+        .status()?;
+
+    if !status.success() {
+        return Err(anyhow!(
+            "nao foi possivel rotear o microfone {source} para {sink}"
+        ));
+    }
+    Ok(())
+}
+
 /// Cria uma fonte de audio virtual, para apps que so aceitam microfone.
 ///
 /// Discord, Slack e Google Meet oferecem apenas uma lista de microfones como

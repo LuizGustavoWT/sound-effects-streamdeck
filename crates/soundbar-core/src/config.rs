@@ -72,6 +72,12 @@ pub struct AudioConfig {
     pub virtual_mic: Option<String>,
     /// Descricao mostrada na lista de microfones.
     pub virtual_mic_description: String,
+    /// Microfone real para ser roteado para dentro do sink dos efeitos.
+    ///
+    /// Com isso o microfone virtual entrega **voz + efeitos** juntos, e o
+    /// usuario escolhe um unico microfone no Discord/Slack/Meet em vez de
+    /// ficar trocando de dispositivo. Vazio desliga.
+    pub mic_into_sink: Option<String>,
 }
 
 impl Default for AudioConfig {
@@ -85,6 +91,7 @@ impl Default for AudioConfig {
             monitor_source: None,
             virtual_mic: Some("StreamDeckSoundBarMic".into()),
             virtual_mic_description: "SoundEffectsStreamDeckMic".into(),
+            mic_into_sink: None,
         }
     }
 }

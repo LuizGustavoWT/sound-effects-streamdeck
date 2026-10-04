@@ -118,6 +118,16 @@ fn run(args: &[String]) -> Result<()> {
         )
         .context("falha ao preparar dispositivo de saida")?;
 
+        // Microfone real roteado para o sink: faz o sink receber voz +
+        // efeitos, para que um unico microfone virtual sirva para tudo.
+        if let Some(mic) = cfg.audio.mic_into_sink.as_deref() {
+            let sink = &cfg.audio.virtual_device;
+            match soundbar_audio::pulse::route_mic_into_sink(mic, sink) {
+                Ok(()) => eprintln!("[soundbar] microfone roteado: {mic} -> {sink}"),
+                Err(e) => eprintln!("[soundbar] aviso: nao roteei o microfone ({e:#})"),
+            }
+        }
+
         // Fonte virtual (microfone) para Discord/Slack/Meet: esses apps so
         // aceitam microfones como entrada, e um null-sink nao aparece la.
         if let Some(mic) = cfg.audio.virtual_mic.as_deref() {

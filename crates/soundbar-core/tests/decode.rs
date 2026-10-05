@@ -77,10 +77,18 @@ fn discovers_and_loads_a_library() {
         lib.contains_key("memes/b"),
         "id aninhado deve preservar o caminho"
     );
+    assert_eq!(
+        lib["memes/b"].id, "memes/b",
+        "id usado pelo mixer deve ser o mesmo id exibido e enviado pelo plugin"
+    );
 
     let infos = sfx::infos(&lib);
     assert_eq!(infos.len(), 2);
     assert!(infos.iter().all(|i| i.duration_ms.is_some()));
+    assert!(
+        infos.iter().any(|i| i.id == "memes/b"),
+        "lista de efeitos deve expor o id completo da subpasta"
+    );
 }
 
 #[test]

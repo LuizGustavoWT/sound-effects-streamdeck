@@ -72,15 +72,21 @@ pub struct AudioConfig {
     pub virtual_mic: Option<String>,
     /// Descricao mostrada na lista de microfones.
     pub virtual_mic_description: String,
-    /// Microfone real para ser somado aos efeitos na fonte virtual.
+    /// Fonte de microfone que deve ser somada aos efeitos. Quando ausente,
+    /// o daemon usa o microfone padrao do sistema se `route_default_mic` for
+    /// verdadeiro.
     ///
     /// Com isso o microfone virtual entrega **voz + efeitos** juntos, e o
     /// usuario escolhe um unico microfone no Discord/Slack/Meet em vez de
-    /// ficar trocando de dispositivo. Vazio desliga.
+    /// ficar trocando de dispositivo. Em `null`, vale a configuracao de
+    /// `route_default_mic`.
     ///
-    /// Cuidado: rotear para o *sink* (em vez da fonte) faz os efeitos
-    /// silenciarem. Ver `route_mic_into_sink`.
+    /// O nome historico do campo e mantido para preservar configuracoes
+    /// existentes; o audio e misturado no daemon, sem loopback para o sink.
     pub mic_into_sink: Option<String>,
+    /// Usa o microfone padrao do sistema quando nao ha fonte explicita.
+    /// Desative para enviar apenas os efeitos ao microfone virtual.
+    pub route_default_mic: bool,
 }
 
 impl Default for AudioConfig {
@@ -95,6 +101,7 @@ impl Default for AudioConfig {
             virtual_mic: Some("StreamDeckSoundBarMic".into()),
             virtual_mic_description: "SoundEffectsStreamDeckMic".into(),
             mic_into_sink: None,
+            route_default_mic: true,
         }
     }
 }
@@ -255,6 +262,24 @@ impl Config {
         if self.audio.virtual_device.trim().is_empty() {
             self.audio.virtual_device = AudioConfig::default().virtual_device;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AudioConfig;
+
+    #[test]
+    fn default_audio_config_includes_system_default_microphone() {
+        let value = serde_json::to_value(AudioConfig::default()).unwrap();
+        assert_eq!(value["route_default_mic"], true);
+    }
+
+    #[test]
+    fn default_microphone_routing_can_be_disabled_in_config() {
+        let config: AudioConfig = serde_json::from_str(r#"{"route_default_mic":false}"#).unwrap();
+        let value = serde_json::to_value(config).unwrap();
+        assert_eq!(value["route_default_mic"], false);
     }
 }
 

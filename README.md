@@ -134,17 +134,23 @@ Aparecer como microfone é o que esses apps conseguem usar.
 
 ### Falar e tocar efeitos ao mesmo tempo
 
-Escolher esse microfone virtual **substitui** o seu microfone real. Para não
-ficar trocando de dispositivo em cada call, o daemon pode rotear o seu
-microfone de verdade para dentro do sink dos efeitos:
+Por padrão, o daemon roteia o microfone padrão do sistema para o sink virtual.
+O monitor desse sink alimenta `SoundEffectsStreamDeckMic`, onde voz e efeitos
+chegam juntos. Nas reuniões, selecione esse microfone uma vez, sem trocar de
+dispositivo durante a call.
+
+Para escolher uma fonte diferente do microfone padrao, configure `mic_into_sink`
+em `config.json`:
 
 ```json
 { "audio": { "mic_into_sink": "alsa_input.usb-SEU-MICROFONE.analog-stereo" } }
 ```
 
-Ache o nome do seu microfone em `pactl list short sources`. Com isso o sink
-passa a receber **voz + efeitos**, e o `StreamDeckSoundBarMic` entrega os dois
-num único dispositivo.
+Encontre o nome da fonte com `pactl list short sources`. Para enviar somente
+os efeitos ao microfone virtual, deixe `mic_into_sink` como `null` e configure
+`"route_default_mic": false`.
+Depois de mudar a fonte padrão do sistema, reinicie o daemon para usar a nova
+entrada.
 
 Para desligar a fonte virtual (por exemplo, se preferir usar um driver de
 áudio dedicado), coloque em `config.json`:

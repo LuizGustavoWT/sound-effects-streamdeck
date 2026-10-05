@@ -26,6 +26,103 @@ fn compact(s: &str) -> String {
     s.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
+/// Retorna a fonte de captura selecionada como microfone padrao no sistema.
+pub fn default_source() -> Result<String> {
+    let output = std::process::Command::new("pactl")
+        .args(["get-default-source"])
+        .output()?;
+    if !output.status.success() {
+        return Err(anyhow!("pactl get-default-source falhou"));
+    }
+
+    let source = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    if source.is_empty() {
+        return Err(anyhow!("pactl retornou uma fonte padrao vazia"));
+    }
+    Ok(source)
+}
+
+/// Envia o microfone para o null-sink; seu monitor leva a mistura ao mic
+/// virtual.
+pub fn route_mic_into_sink(source: &str, sink: &str) -> Result<()> {
+    let modules = std::process::Command::new("pactl")
+        .args(["list", "short", "modules"])
+        .output()?;
+    if modules.status.success() {
+        let modules = String::from_utf8_lossy(&modules.stdout);
+        if module_loopback_loaded(&modules, source, sink) {
+            return Ok(());
+        }
+        unload_loopbacks_from_sink(&modules, sink)?;
+    }
+
+    let mut args = vec!["load-module".to_owned()];
+    args.extend(module_loopback_args(source, sink));
+    let result = std::process::Command::new("pactl").args(&args).output()?;
+    if !result.status.success() {
+        return Err(anyhow!(
+            "nao foi possivel rotear o microfone {source} para {sink}: {}",
+            String::from_utf8_lossy(&result.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
+fn module_loopback_args(source: &str, sink: &str) -> Vec<String> {
+    vec![
+        "module-loopback".to_owned(),
+        format!("source={source}"),
+        format!("sink={sink}"),
+        "latency_msec=20".to_owned(),
+    ]
+}
+
+fn module_loopback_loaded(modules: &str, source: &str, sink: &str) -> bool {
+    let source_arg = format!("source={source}");
+    let sink_arg = format!("sink={sink}");
+    loopback_modules(modules).any(|(_, args)| {
+        args.contains(&source_arg.as_str()) && args.contains(&sink_arg.as_str())
+    })
+}
+
+fn module_loopback_ids_for_sink(modules: &str, sink: &str) -> Vec<String> {
+    let sink_arg = format!("sink={sink}");
+    loopback_modules(modules)
+        .filter_map(|(id, args)| args.contains(&sink_arg.as_str()).then(|| id.to_owned()))
+        .collect()
+}
+
+fn loopback_modules(modules: &str) -> impl Iterator<Item = (&str, Vec<&str>)> {
+    modules.lines().filter_map(|line| {
+        let mut columns = line.split_whitespace();
+        let id = columns.next()?;
+        (columns.next() == Some("module-loopback")).then(|| (id, columns.collect()))
+    })
+}
+
+fn remove_mic_route_from_sink(sink: &str) -> Result<()> {
+    let modules = std::process::Command::new("pactl")
+        .args(["list", "short", "modules"])
+        .output()?;
+    if !modules.status.success() {
+        return Err(anyhow!("pactl list short modules falhou"));
+    }
+
+    unload_loopbacks_from_sink(&String::from_utf8_lossy(&modules.stdout), sink)
+}
+
+fn unload_loopbacks_from_sink(modules: &str, sink: &str) -> Result<()> {
+    for id in module_loopback_ids_for_sink(modules, sink) {
+        let result = std::process::Command::new("pactl")
+            .args(["unload-module", &id])
+            .output()?;
+        if !result.status.success() {
+            return Err(anyhow!("nao foi possivel remover o loopback {id}"));
+        }
+    }
+    Ok(())
+}
+
 /// Cria (ou verifica) o null-sink virtual via pactl.
 pub fn ensure_null_sink(name: &str, description: &str) -> Result<()> {
     let existing = std::process::Command::new("pactl")
@@ -62,47 +159,6 @@ pub fn ensure_null_sink(name: &str, description: &str) -> Result<()> {
     if !status.success() {
         return Err(anyhow!(
             "pactl load-module module-null-sink falhou. Verifique se o pipewire-pulse esta instalado."
-        ));
-    }
-    Ok(())
-}
-
-/// Envia um microfone real para a fonte virtual, onde ele se soma aos
-/// efeitos.
-///
-/// Direcao importa aqui. Rotear o microfone para DENTRO do sink dos efeitos
-/// (sink <- mic) faz o loopback ocupar a escrita do sink, e o daemon perde a
-/// corrida: os efeitos silenciam. Medido -- 1.43s de audio com o sink livre,
-/// 0.00s com o loopback conectado.
-///
-/// Somando na fonte (mic -> source virtual) nao ha disputa: o daemon escreve
-/// no sink, e o microfone alimenta a fonte que o Discord/Slack/Meet leem.
-pub fn route_mic_into_sink(source: &str, sink: &str) -> Result<()> {
-    // Evita duplicar o loopback a cada restart do daemon.
-    let existing = std::process::Command::new("pactl")
-        .args(["list", "short", "modules"])
-        .output()?;
-    if existing.status.success() {
-        let out = String::from_utf8_lossy(&existing.stdout);
-        if out.contains(&format!("source={source}")) && out.contains(&format!("sink={sink}")) {
-            return Ok(());
-        }
-    }
-
-    let status = std::process::Command::new("pactl")
-        .args([
-            "load-module",
-            "module-loopback",
-            &format!("source={source}"),
-            &format!("sink={sink}"),
-            // Latencia curta: voz precisa chegar sem atraso perceptivel.
-            "latency_msec=20",
-        ])
-        .status()?;
-
-    if !status.success() {
-        return Err(anyhow!(
-            "nao foi possivel rotear o microfone {source} para {sink}"
         ));
     }
     Ok(())
@@ -180,8 +236,18 @@ pub struct PulseOutput {
 
 impl PulseOutput {
     /// Prepara o dispositivo. Cria o null-sink se necessario.
-    pub fn new(name: &str, description: &str) -> Result<Self> {
+    pub fn new(name: &str, description: &str, mic_source: Option<String>) -> Result<Self> {
         ensure_null_sink(name, description)?;
+        if let Some(source) = mic_source {
+            match route_mic_into_sink(&source, name) {
+                Ok(()) => eprintln!("[soundbar] microfone roteado: {source} -> {name}"),
+                Err(e) => {
+                    eprintln!("[soundbar] aviso: nao consegui rotear o microfone {source}: {e:#}")
+                }
+            }
+        } else if let Err(e) = remove_mic_route_from_sink(name) {
+            eprintln!("[soundbar] aviso: nao consegui remover a rota do microfone: {e:#}");
+        }
         Ok(PulseOutput {
             name: name.to_string(),
         })
@@ -322,5 +388,53 @@ impl PulseOutput {
 
         let _ = stream.disconnect();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod loopback_tests {
+    use super::{module_loopback_args, module_loopback_ids_for_sink, module_loopback_loaded};
+
+    #[test]
+    fn loopback_targets_the_requested_mic_and_virtual_sink() {
+        assert_eq!(
+            module_loopback_args("physical-mic", "StreamDeckSoundBar"),
+            vec![
+                "module-loopback".to_owned(),
+                "source=physical-mic".to_owned(),
+                "sink=StreamDeckSoundBar".to_owned(),
+                "latency_msec=20".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn existing_loopback_is_detected_only_when_both_endpoints_match() {
+        let modules = "12\tmodule-loopback\tsource=physical-mic sink=StreamDeckSoundBar latency_msec=20\n13\tmodule-null-sink\tsink=OtherSink";
+
+        assert!(module_loopback_loaded(
+            modules,
+            "physical-mic",
+            "StreamDeckSoundBar"
+        ));
+        assert!(!module_loopback_loaded(
+            modules,
+            "other-mic",
+            "StreamDeckSoundBar"
+        ));
+        assert!(!module_loopback_loaded(
+            modules,
+            "physical-mic",
+            "OtherSink"
+        ));
+    }
+
+    #[test]
+    fn route_cleanup_only_selects_loopbacks_for_the_soundbar_sink() {
+        let modules = "12\tmodule-loopback\tsource=physical-mic sink=StreamDeckSoundBar latency_msec=20\n13\tmodule-loopback\tsource=other-mic sink=OtherSink\n14\tmodule-null-sink\tsink=StreamDeckSoundBar";
+        assert_eq!(
+            module_loopback_ids_for_sink(modules, "StreamDeckSoundBar"),
+            vec!["12"]
+        );
     }
 }

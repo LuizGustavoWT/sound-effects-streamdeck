@@ -150,8 +150,13 @@ pub fn load_dir(dir: &Path) -> Result<SoundLibrary> {
     let mut lib = BTreeMap::new();
     for path in discover(dir)? {
         match load(&path) {
-            Ok(sound) => {
-                lib.insert(id_for(dir, &path), Arc::new(sound));
+            Ok(mut sound) => {
+                let id = id_for(dir, &path);
+                // The daemon uses Sound.id to stop the current voice before
+                // replaying an effect. Keep it identical to the public
+                // library key, including any subdirectory prefix.
+                sound.id = id.clone();
+                lib.insert(id, Arc::new(sound));
             }
             Err(e) => {
                 eprintln!("[soundbar] pulando {}: {e:#}", path.display());

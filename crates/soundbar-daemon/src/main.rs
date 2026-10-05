@@ -112,21 +112,43 @@ fn run(args: &[String]) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
         use soundbar_audio::pulse::{PulseOutput, Shared};
+        let mic_source = if cfg.audio.virtual_mic.is_none() {
+            None
+        } else if let Some(source) = cfg
+            .audio
+            .mic_into_sink
+            .as_deref()
+            .filter(|source| !source.trim().is_empty())
+        {
+            Some(source.to_owned())
+        } else if cfg.audio.route_default_mic {
+            match soundbar_audio::pulse::default_source() {
+                Ok(source) => Some(source),
+                Err(e) => {
+                    eprintln!("[soundbar] aviso: nao encontrei o microfone padrao ({e:#})");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let mic_source = mic_source.filter(|source| {
+            let loops_back = source.ends_with(".monitor")
+                || cfg.audio.virtual_mic.as_deref() == Some(source.as_str());
+            if loops_back {
+                eprintln!(
+                    "[soundbar] aviso: ignorando fonte de microfone que causaria loop: {source}"
+                );
+            }
+            !loops_back
+        });
+
         let out = PulseOutput::new(
             &cfg.audio.virtual_device,
             &cfg.audio.virtual_device_description,
+            mic_source,
         )
         .context("falha ao preparar dispositivo de saida")?;
-
-        // Microfone real roteado para o sink: faz o sink receber voz +
-        // efeitos, para que um unico microfone virtual sirva para tudo.
-        if let Some(mic) = cfg.audio.mic_into_sink.as_deref() {
-            let sink = &cfg.audio.virtual_device;
-            match soundbar_audio::pulse::route_mic_into_sink(mic, sink) {
-                Ok(()) => eprintln!("[soundbar] microfone roteado: {mic} -> {sink}"),
-                Err(e) => eprintln!("[soundbar] aviso: nao roteei o microfone ({e:#})"),
-            }
-        }
 
         // Fonte virtual (microfone) para Discord/Slack/Meet: esses apps so
         // aceitam microfones como entrada, e um null-sink nao aparece la.
@@ -311,20 +333,49 @@ fn dispatch(msg: ClientMessage, state: &Arc<AppState>) -> Option<DaemonMessage> 
         ClientMessage::StopAll => {
             let mut mx = state.mixer.lock().unwrap_or_else(|e| e.into_inner());
             mx.stop_all();
-            None
+            Some(DaemonMessage::Ack)
         }
 
         ClientMessage::SetMasterGain { gain } => {
             let mut mx = state.mixer.lock().unwrap_or_else(|e| e.into_inner());
             mx.set_master_gain(gain);
-            None
+            Some(DaemonMessage::Ack)
         }
 
-        ClientMessage::PushLayout { .. } => None,
+        ClientMessage::PushLayout { .. } => Some(DaemonMessage::Ack),
 
         ClientMessage::Ping => Some(DaemonMessage::Pong {
             host: format!("soundbar-daemon {}", env!("CARGO_PKG_VERSION")),
             uptime_ms: state.started.elapsed().as_millis() as u64,
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_state() -> Arc<AppState> {
+        Arc::new(AppState {
+            mixer: Arc::new(Mutex::new(Mixer::new(1.0, 16))),
+            library: Arc::new(RwLock::new(SoundLibrary::default())),
+            sounds_dir: PathBuf::new(),
+            started: Instant::now(),
+        })
+    }
+
+    #[test]
+    fn stop_all_replies_so_the_ipc_client_can_continue() {
+        let response = dispatch(ClientMessage::StopAll, &test_state());
+        assert!(
+            matches!(response, Some(DaemonMessage::Ack)),
+            "StopAll precisa devolver um ack para liberar o cliente IPC"
+        );
+    }
+
+    #[test]
+    fn commands_without_payload_return_ack() {
+        let response = dispatch(ClientMessage::SetMasterGain { gain: 0.5 }, &test_state());
+        assert!(matches!(response, Some(DaemonMessage::Ack)));
     }
 }

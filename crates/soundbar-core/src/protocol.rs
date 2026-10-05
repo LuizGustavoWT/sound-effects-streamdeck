@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{BufRead, Write};
 
 /// Versao do protocolo. Incompatibilidade quebra a conexao de forma limpa.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// Mensagens que o plugin envia ao daemon.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,6 +82,8 @@ impl DeviceKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DaemonMessage {
+    /// Confirma a execucao de um comando sem resposta especifica.
+    Ack,
     /// Handshake aceito.
     Welcome {
         version: u32,
@@ -195,6 +197,13 @@ mod tests {
         let s = serde_json::to_string(&m).unwrap();
         let back: DaemonMessage = serde_json::from_str(&s).unwrap();
         assert!(matches!(back, DaemonMessage::SlotState { .. }));
+    }
+
+    #[test]
+    fn ack_message_roundtrip() {
+        let encoded = serde_json::to_string(&DaemonMessage::Ack).unwrap();
+        let decoded: DaemonMessage = serde_json::from_str(&encoded).unwrap();
+        assert!(matches!(decoded, DaemonMessage::Ack));
     }
 
     #[test]

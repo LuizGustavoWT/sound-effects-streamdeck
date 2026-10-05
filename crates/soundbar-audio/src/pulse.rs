@@ -67,15 +67,16 @@ pub fn ensure_null_sink(name: &str, description: &str) -> Result<()> {
     Ok(())
 }
 
-/// Rota um microfone real para dentro do sink dos efeitos.
+/// Envia um microfone real para a fonte virtual, onde ele se soma aos
+/// efeitos.
 ///
-/// Com isso o sink passa a receber **voz + efeitos**, e o microfone virtual
-/// (`ensure_virtual_mic`) entrega os dois juntos. O usuario escolhe um
-/// unico microfone no Discord/Slack/Meet, em vez de ficar trocando de
-/// dispositivo ou de usar um driver dedicado.
+/// Direcao importa aqui. Rotear o microfone para DENTRO do sink dos efeitos
+/// (sink <- mic) faz o loopback ocupar a escrita do sink, e o daemon perde a
+/// corrida: os efeitos silenciam. Medido -- 1.43s de audio com o sink livre,
+/// 0.00s com o loopback conectado.
 ///
-/// `module-loopback` faz a copia; e a unica forma de somar uma entrada de
-/// hardware a um sink virtual.
+/// Somando na fonte (mic -> source virtual) nao ha disputa: o daemon escreve
+/// no sink, e o microfone alimenta a fonte que o Discord/Slack/Meet leem.
 pub fn route_mic_into_sink(source: &str, sink: &str) -> Result<()> {
     // Evita duplicar o loopback a cada restart do daemon.
     let existing = std::process::Command::new("pactl")
@@ -94,6 +95,8 @@ pub fn route_mic_into_sink(source: &str, sink: &str) -> Result<()> {
             "module-loopback",
             &format!("source={source}"),
             &format!("sink={sink}"),
+            // Latencia curta: voz precisa chegar sem atraso perceptivel.
+            "latency_msec=20",
         ])
         .status()?;
 

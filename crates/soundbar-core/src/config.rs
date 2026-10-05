@@ -72,11 +72,14 @@ pub struct AudioConfig {
     pub virtual_mic: Option<String>,
     /// Descricao mostrada na lista de microfones.
     pub virtual_mic_description: String,
-    /// Microfone real para ser roteado para dentro do sink dos efeitos.
+    /// Microfone real para ser somado aos efeitos na fonte virtual.
     ///
     /// Com isso o microfone virtual entrega **voz + efeitos** juntos, e o
     /// usuario escolhe um unico microfone no Discord/Slack/Meet em vez de
     /// ficar trocando de dispositivo. Vazio desliga.
+    ///
+    /// Cuidado: rotear para o *sink* (em vez da fonte) faz os efeitos
+    /// silenciarem. Ver `route_mic_into_sink`.
     pub mic_into_sink: Option<String>,
 }
 

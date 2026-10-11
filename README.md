@@ -132,19 +132,26 @@ Aparecer como microfone é o que esses apps conseguem usar.
 2. No Discord/Slack/Meet, abra as configurações de áudio.
 3. Escolha `SoundEffectsStreamDeckMic` como microfone.
 
-### Falar e tocar efeitos ao mesmo tempo
+### Falar e tocar efeitos sem mandar a voz ao OBS
 
 Escolher esse microfone virtual **substitui** o seu microfone real. Para não
-ficar trocando de dispositivo em cada call, o daemon pode rotear o seu
-microfone de verdade para dentro do sink dos efeitos:
+ficar trocando de dispositivo em cada call, configure um segundo mixer interno:
 
 ```json
-{ "audio": { "mic_into_sink": "alsa_input.usb-SEU-MICROFONE.analog-stereo" } }
+{
+  "audio": {
+    "call_mix_device": "StreamDeckCallMix",
+    "call_mix_device_description": "SoundEffectsStreamDeckCallMix",
+    "mic_into_sink": "alsa_input.usb-SEU-MICROFONE.analog-stereo"
+  }
+}
 ```
 
-Ache o nome do seu microfone em `pactl list short sources`. Com isso o sink
-passa a receber **voz + efeitos**, e o `StreamDeckSoundBarMic` entrega os dois
-num único dispositivo.
+Ache o nome do seu microfone em `pactl list short sources`. O
+`StreamDeckSoundBar` continua contendo **somente efeitos**, portanto é ele que
+o OBS deve capturar. O `StreamDeckSoundBarMic` passa a entregar **voz +
+efeitos** para Discord, Slack e Meet. `StreamDeckCallMix` é interno; não o
+selecione manualmente nos aplicativos.
 
 Para desligar a fonte virtual (por exemplo, se preferir usar um driver de
 áudio dedicado), coloque em `config.json`:

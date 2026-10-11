@@ -396,7 +396,9 @@ impl PulseOutput {
             }
 
             bytes.resize(buf.len() * std::mem::size_of::<i16>(), 0);
-            for (sample, encoded) in buf.iter().zip(bytes.chunks_exact_mut(2)) {
+            let (encoded_samples, remainder) = bytes.as_chunks_mut::<2>();
+            debug_assert!(remainder.is_empty());
+            for (sample, encoded) in buf.iter().zip(encoded_samples) {
                 encoded.copy_from_slice(&sample.to_le_bytes());
             }
 

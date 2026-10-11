@@ -8,6 +8,7 @@
 use anyhow::{anyhow, Result};
 use libpulse_binding as pulse;
 use pulse::context::{Context, FlagSet as CtxFlags, State as CtxState};
+use pulse::def::BufferAttr;
 use pulse::mainloop::standard::{IterateResult, Mainloop};
 use pulse::sample::{Format, Spec};
 use pulse::stream::{FlagSet as StreamFlags, SeekMode, State as StreamState, Stream};
@@ -67,17 +68,8 @@ pub fn ensure_null_sink(name: &str, description: &str) -> Result<()> {
     Ok(())
 }
 
-/// Envia um microfone real para a fonte virtual, onde ele se soma aos
-/// efeitos.
-///
-/// Direcao importa aqui. Rotear o microfone para DENTRO do sink dos efeitos
-/// (sink <- mic) faz o loopback ocupar a escrita do sink, e o daemon perde a
-/// corrida: os efeitos silenciam. Medido -- 1.43s de audio com o sink livre,
-/// 0.00s com o loopback conectado.
-///
-/// Somando na fonte (mic -> source virtual) nao ha disputa: o daemon escreve
-/// no sink, e o microfone alimenta a fonte que o Discord/Slack/Meet leem.
-pub fn route_mic_into_sink(source: &str, sink: &str) -> Result<()> {
+/// Envia uma fonte Pulse para um sink, onde ela se soma a outras fontes.
+pub fn route_source_to_sink(source: &str, sink: &str) -> Result<()> {
     // Evita duplicar o loopback a cada restart do daemon.
     let existing = std::process::Command::new("pactl")
         .args(["list", "short", "modules"])
@@ -102,8 +94,42 @@ pub fn route_mic_into_sink(source: &str, sink: &str) -> Result<()> {
 
     if !status.success() {
         return Err(anyhow!(
-            "nao foi possivel rotear o microfone {source} para {sink}"
+            "nao foi possivel rotear a fonte {source} para {sink}"
         ));
+    }
+    Ok(())
+}
+
+/// Remove loopbacks exatos, usado ao migrar uma configuracao antiga.
+pub fn remove_loopback(source: &str, sink: &str) -> Result<()> {
+    let existing = std::process::Command::new("pactl")
+        .args(["list", "short", "modules"])
+        .output()?;
+    if !existing.status.success() {
+        return Ok(());
+    }
+
+    let out = String::from_utf8_lossy(&existing.stdout);
+    for line in out.lines() {
+        let mut fields = line.split_whitespace();
+        let Some(id) = fields.next() else { continue };
+        let Some(module) = fields.next() else {
+            continue;
+        };
+        let args = fields.collect::<Vec<_>>().join(" ");
+        if module == "module-loopback"
+            && args.contains(&format!("source={source}"))
+            && args.contains(&format!("sink={sink}"))
+        {
+            let status = std::process::Command::new("pactl")
+                .args(["unload-module", id])
+                .status()?;
+            if !status.success() {
+                return Err(anyhow!(
+                    "nao foi possivel remover loopback {source} -> {sink}"
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -119,16 +145,30 @@ pub fn route_mic_into_sink(source: &str, sink: &str) -> Result<()> {
 /// PipeWire: o sink nao tem um "entrada", mas o monitor dele sim.
 pub fn ensure_virtual_mic(name: &str, description: &str, master: &str) -> Result<()> {
     let existing = std::process::Command::new("pactl")
-        .args(["list", "short", "sources"])
+        .args(["list", "short", "modules"])
         .output()?;
 
     if existing.status.success() {
         let out = String::from_utf8_lossy(&existing.stdout);
-        if out
-            .lines()
-            .any(|l| l.split_whitespace().nth(1) == Some(name))
-        {
-            return Ok(());
+        for line in out.lines() {
+            let mut fields = line.split_whitespace();
+            let Some(id) = fields.next() else { continue };
+            let Some(module) = fields.next() else {
+                continue;
+            };
+            let args = fields.collect::<Vec<_>>().join(" ");
+            if module == "module-remap-source" && args.contains(&format!("source_name={name}")) {
+                if args.contains(&format!("master={master}")) {
+                    return Ok(());
+                }
+                let status = std::process::Command::new("pactl")
+                    .args(["unload-module", id])
+                    .status()?;
+                if !status.success() {
+                    return Err(anyhow!("nao foi possivel atualizar a fonte virtual {name}"));
+                }
+                break;
+            }
         }
     }
 
@@ -240,8 +280,36 @@ impl PulseOutput {
         let mut stream = Stream::new(&mut ctx, "soundbar-out", &spec, None)
             .ok_or_else(|| anyhow!("falha ao criar stream de saida"))?;
 
+        // O servidor Pulse aceita por padrao alguns megabytes por stream. Para
+        // um gerador de efeitos isso e desnecessario e perigoso: se o clock do
+        // null-sink parar, escritas em ritmo fixo viram uma fila que cresce sem
+        // limite pratico dentro do pipewire-pulse.
+        //
+        // Limitamos o stream a 160 ms e pedimos lotes de 20 ms. EARLY_REQUESTS
+        // combina com o loop que espera espaco antes de escrever, sem depender
+        // de um hardware com relogio proprio (o null-sink nao tem um).
+        const SAMPLE_RATE: u32 = 48_000;
+        const CHANNELS: u32 = 2;
+        const BYTES_PER_FRAME: u32 = CHANNELS * std::mem::size_of::<i16>() as u32;
+        const FRAMES_PER_BATCH: usize = SAMPLE_RATE as usize / 50;
+        const BYTES_PER_BATCH: usize = FRAMES_PER_BATCH * BYTES_PER_FRAME as usize;
+        let buffer_attr = BufferAttr {
+            maxlength: (BYTES_PER_BATCH * 8) as u32,
+            tlength: (BYTES_PER_BATCH * 4) as u32,
+            // Sem prebuffer: um efeito pode comecar imediatamente apos o click.
+            prebuf: 0,
+            minreq: BYTES_PER_BATCH as u32,
+            fragsize: u32::MAX,
+        };
+
         stream
-            .connect_playback(Some(&self.name), None, StreamFlags::NOFLAGS, None, None)
+            .connect_playback(
+                Some(&self.name),
+                Some(&buffer_attr),
+                StreamFlags::EARLY_REQUESTS | StreamFlags::START_CORKED,
+                None,
+                None,
+            )
             .map_err(|e| anyhow!("connect_playback falhou: {e:?}"))?;
 
         // `connect_playback` e assincrono: so aceita audio quando o stream
@@ -271,13 +339,12 @@ impl PulseOutput {
         let device = self.name.clone();
         eprintln!("[soundbar] tocando em {device}");
 
-        // Laco de escrita. Sem callback: controlamos o ritmo manualmente para
-        // poder checar `should_run` e evitar borrow de `stream` dentro de closure.
-        // 20 ms por lote: granularidade fina o bastante para nao picotar,
-        // grande o bastante para o Pulse nao engasgar.
-        const SAMPLE_RATE: u32 = 48_000;
-        const FRAMES_PER_BATCH: usize = SAMPLE_RATE as usize / 50;
+        // O stream inicia pausado e so e ativado durante um efeito. Alem de
+        // poupar CPU, isso evita alimentar o pipewire-pulse com silencio sem
+        // fim. Nunca escrevemos alem do tamanho solicitado pelo servidor.
+        let mut corked = true;
         let mut buf: Vec<i16> = Vec::new();
+        let mut bytes: Vec<u8> = Vec::with_capacity(BYTES_PER_BATCH);
 
         while should_run() {
             match ml.iterate(false) {
@@ -289,13 +356,35 @@ impl PulseOutput {
                 }
             }
 
-            // `writable_size()` devolve 0 sempre neste sink (e um null-sink
-            // sem relogio de consumo), entao o `unwrap_or` nunca era usado e o
-            // codigo caia no minimo de 1 frame: 4 bytes por iteracao. Isso
-            // produz o audio picotado. Aqui o tamanho vem de um timer fixo.
-            let frames = FRAMES_PER_BATCH;
+            let has_audio = shared
+                .mixer
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .active_voices()
+                > 0;
 
-            buf.resize(frames * 2, 0);
+            if has_audio && corked {
+                let _ = stream.uncork(None);
+                corked = false;
+            } else if !has_audio && !corked {
+                let _ = stream.cork(None);
+                corked = true;
+            }
+
+            if !has_audio {
+                std::thread::sleep(Duration::from_millis(5));
+                continue;
+            }
+
+            // A API Pulse informa quantos bytes ela realmente solicitou. Isso
+            // e a protecao principal contra uma fila infinita no servidor.
+            let writable = stream.writable_size().unwrap_or(0);
+            if writable < BYTES_PER_BATCH {
+                std::thread::sleep(Duration::from_millis(2));
+                continue;
+            }
+
+            buf.resize(FRAMES_PER_BATCH * CHANNELS as usize, 0);
             {
                 let lib = shared
                     .library
@@ -306,18 +395,18 @@ impl PulseOutput {
                 mx.mix_into(&mut buf, &move |id: &str| lib.get(id).cloned());
             }
 
-            let bytes: Vec<u8> = buf.iter().flat_map(|s| s.to_le_bytes()).collect();
+            bytes.resize(buf.len() * std::mem::size_of::<i16>(), 0);
+            let (encoded_samples, remainder) = bytes.as_chunks_mut::<2>();
+            debug_assert!(remainder.is_empty());
+            for (sample, encoded) in buf.iter().zip(encoded_samples) {
+                encoded.copy_from_slice(&sample.to_le_bytes());
+            }
 
             if let Err(e) = stream.write_copy(&bytes, 0, SeekMode::Relative) {
                 eprintln!("[soundbar] escrita falhou: {e:?}");
-                std::thread::sleep(Duration::from_millis(20));
+                std::thread::sleep(Duration::from_millis(5));
                 continue;
             }
-
-            // Espera a duracao real do lote: e o que mantem o ritmo em 48 kHz.
-            std::thread::sleep(Duration::from_nanos(
-                FRAMES_PER_BATCH as u64 * 1_000_000_000 / SAMPLE_RATE as u64,
-            ));
         }
 
         let _ = stream.disconnect();

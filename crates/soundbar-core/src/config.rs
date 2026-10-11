@@ -72,6 +72,14 @@ pub struct AudioConfig {
     pub virtual_mic: Option<String>,
     /// Descricao mostrada na lista de microfones.
     pub virtual_mic_description: String,
+    /// Sink interno que mistura microfone real e efeitos para chamadas.
+    ///
+    /// Quando configurado, o sink principal continua contendo somente os
+    /// efeitos (para o OBS) e esta segunda mixagem alimenta a fonte virtual
+    /// usada por Discord, Slack e Meet.
+    pub call_mix_device: Option<String>,
+    /// Descricao do mixer interno para chamadas.
+    pub call_mix_device_description: String,
     /// Microfone real para ser somado aos efeitos na fonte virtual.
     ///
     /// Com isso o microfone virtual entrega **voz + efeitos** juntos, e o
@@ -94,6 +102,8 @@ impl Default for AudioConfig {
             monitor_source: None,
             virtual_mic: Some("StreamDeckSoundBarMic".into()),
             virtual_mic_description: "SoundEffectsStreamDeckMic".into(),
+            call_mix_device: None,
+            call_mix_device_description: "SoundEffectsStreamDeckCallMix".into(),
             mic_into_sink: None,
         }
     }

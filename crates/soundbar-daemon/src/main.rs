@@ -118,11 +118,35 @@ fn run(args: &[String]) -> Result<()> {
         )
         .context("falha ao preparar dispositivo de saida")?;
 
-        // Microfone real roteado para o sink: faz o sink receber voz +
-        // efeitos, para que um unico microfone virtual sirva para tudo.
-        if let Some(mic) = cfg.audio.mic_into_sink.as_deref() {
+        let effects_monitor = format!("{}.monitor", cfg.audio.virtual_device);
+        let mut virtual_mic_master = effects_monitor.clone();
+
+        if let Some(call_sink) = cfg.audio.call_mix_device.as_deref() {
+            soundbar_audio::pulse::ensure_null_sink(
+                call_sink,
+                &cfg.audio.call_mix_device_description,
+            )
+            .context("falha ao preparar mixer de chamadas")?;
+
+            if let Some(mic) = cfg.audio.mic_into_sink.as_deref() {
+                soundbar_audio::pulse::remove_loopback(mic, &cfg.audio.virtual_device)
+                    .context("falha ao separar o microfone do sink do OBS")?;
+                match soundbar_audio::pulse::route_source_to_sink(mic, call_sink) {
+                    Ok(()) => eprintln!("[soundbar] microfone para chamadas: {mic} -> {call_sink}"),
+                    Err(e) => eprintln!("[soundbar] aviso: nao roteei o microfone ({e:#})"),
+                }
+            }
+
+            match soundbar_audio::pulse::route_source_to_sink(&effects_monitor, call_sink) {
+                Ok(()) => {
+                    eprintln!("[soundbar] efeitos para chamadas: {effects_monitor} -> {call_sink}")
+                }
+                Err(e) => eprintln!("[soundbar] aviso: nao roteei os efeitos ({e:#})"),
+            }
+            virtual_mic_master = format!("{call_sink}.monitor");
+        } else if let Some(mic) = cfg.audio.mic_into_sink.as_deref() {
             let sink = &cfg.audio.virtual_device;
-            match soundbar_audio::pulse::route_mic_into_sink(mic, sink) {
+            match soundbar_audio::pulse::route_source_to_sink(mic, sink) {
                 Ok(()) => eprintln!("[soundbar] microfone roteado: {mic} -> {sink}"),
                 Err(e) => eprintln!("[soundbar] aviso: nao roteei o microfone ({e:#})"),
             }
@@ -131,11 +155,10 @@ fn run(args: &[String]) -> Result<()> {
         // Fonte virtual (microfone) para Discord/Slack/Meet: esses apps so
         // aceitam microfones como entrada, e um null-sink nao aparece la.
         if let Some(mic) = cfg.audio.virtual_mic.as_deref() {
-            let master = format!("{}.monitor", cfg.audio.virtual_device);
             match soundbar_audio::pulse::ensure_virtual_mic(
                 mic,
                 &cfg.audio.virtual_mic_description,
-                &master,
+                &virtual_mic_master,
             ) {
                 Ok(()) => eprintln!("[soundbar] microfone virtual: {mic}"),
                 Err(e) => eprintln!(
